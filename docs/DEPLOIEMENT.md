@@ -96,3 +96,14 @@ curl -X POST http://localhost:8320/api/outil/execute \
   -d '{"tool":"generate_image","args":{"prompt":"un cube rouge","resolution":"hd"}}'
 # puis GET /api/outil/job/<id> jusqu'à fini:true
 ```
+
+## 8. Premier lancement (Néo)
+
+Au premier demarrage, l'interface ouvre l'assistant de configuration :
+
+1. **Langue** — FR / EN / ES / DE / IT (interface + réponses).
+2. **Détection matérielle** — GPU, VRAM, RAM, disque, palier T1/T2/T3.
+3. **Modèles recommandés** — installation en un clic (Ollama pull en streaming).
+4. **Fin** — Néo est prêt ; tout reste modifiable dans Réglages.
+
+Rien n'est impose : « Passer l'installation guidée » reste disponible.

@@ -15,7 +15,8 @@ use tower_http::cors::CorsLayer;
 
 use crate::routes::{
     benchmark, chat, comms, conversations, documents, extras, finetune, health, memory,
-    models, outil, sd, security, system, settings, studio, style_collab, tts, voice,
+    models, onboarding, outil, sd, security, system, settings, studio, style_collab, tts,
+    voice,
 };
 
 #[derive(Clone)]
@@ -60,6 +61,7 @@ async fn main() {
         .merge(health::router())
         .merge(chat::router())
         .merge(feedback::router())
+        .merge(onboarding::router())
         .merge(outil::router())
         .merge(conversations::router())
         .merge(models::router())

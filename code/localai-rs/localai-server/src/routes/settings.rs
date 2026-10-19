@@ -18,6 +18,8 @@ const ALLOWED: &[&str] = &[
     "voice_model", "stt_model", "telegram_token", "telegram_enabled",
     "telegram_model", "livekit_url", "livekit_api_key", "livekit_api_secret",
     "style_auto", "telegram_dangerous_tools",
+    // Produit Néo : langue, premiere installation, nom de l'assistant.
+    "language", "onboarded", "assistant_name",
 ];
 
 async fn get_all(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {

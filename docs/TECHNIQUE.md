@@ -1,4 +1,4 @@
-# Architecture technique — LocalAI
+﻿# Architecture technique — LocalAI
 
 > Source de vérité condensée. Détails d'exploitation : `docs/SECURITE.md`,
 > `docs/SKILLS.md`, `docs/DEPLOIEMENT.md`.
@@ -64,7 +64,7 @@
 - `routes/outil.rs` : **jobs asynchrones** — `POST /api/outil/execute`
   `{"tool","args"}` → `{"job"}` ; `GET /api/outil/job/:id` (+ `?attendre=1`
   long-poll 880 s, refais un GET après).
-- Tool `localai_chat` (t_pont.py) : consomme le SSE `/api/chat` et renvoie la
+- Tool `cerveau_local` (t_pont.py) : consomme le SSE `/api/chat` et renvoie la
   réponse finale — l'agent OpenJarvis tient en 3-4 tours ReAct.
 - Skill `localai` (SKILL.md, agentskills.io) + correctifs locaux OpenJarvis :
   `ssrf.py` (liste blanche `OPENJARVIS_SSRF_ALLOW`), `http_request.py`
@@ -100,3 +100,18 @@
 - Préchauffage cache avant tout chargement SD ; réutilisation des modèles
   Ollama déjà chargés (traduction sur le champion si présent).
 - Verrou GPU : évite les OOM concurrents ; file d'attente implicite.
+
+## 9. Premiere installation (onboarding)
+
+- **Route `GET /api/onboarding`** (Rust) : renvoie la langue choisie, l'etat
+  d'installation et, via le pont Python (`backend.core.hardware`), le
+  materiel detecte et le plan de modeles adapte.
+- **Paliers** : `T1` (<= 8 Go VRAM / CPU), `T2` (10-20 Go), `T3` (>= 22 Go).
+  Chaque palier definit un modele par role (agent_brain, coder, vision,
+  teacher, student, embed) ; le premier modele installe gagne.
+- **Assistant frontend** (`OnboardingWizard.tsx`) : langue -> detection
+  materielle -> modeles recommandes (installation SSE via `/api/models/install`)
+  -> fin. L'etat est persiste (`language`, `onboarded`).
+- **Langue des reponses** : le prompt systeme recoit une directive
+  (« Reponds toujours en francais », « Always answer in English », etc.)
+  construite depuis le reglage `language` — sans toucher aux prompts des agents.

@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import type { Conversation, SystemInfo } from "../lib/api";
+import { type Lang, t } from "../lib/i18n";
 
 interface Props {
   view: string;
@@ -10,6 +11,7 @@ interface Props {
   onDeleteConv: (id: number) => void;
   onNewChat: () => void;
   systemInfo: SystemInfo | null;
+  lang: Lang;
 }
 
 export default function Sidebar({
@@ -21,8 +23,10 @@ export default function Sidebar({
   onDeleteConv,
   onNewChat,
   systemInfo,
+  lang,
 }: Props) {
   const ollamaOk = systemInfo?.ollama.available ?? false;
+  const texte = useCallback((key: string) => t(lang, key), [lang]);
 
   const fmtUptime = useCallback((s: number) => {
     const h = Math.floor(s / 3600);
@@ -30,13 +34,13 @@ export default function Sidebar({
     return `${h}h ${String(m).padStart(2, "0")}m`;
   }, []);
 
-  const gpu = systemInfo?.gpus[0];
+  const gpu = systemInfo?.gpus?.[0];
 
   return (
     <aside className="sidebar">
       <div className="brand">
         <div className="brand-dot" />
-        <h1>LocalAI</h1>
+        <h1>NÉO</h1>
       </div>
 
       <div className="nav-row">
@@ -44,13 +48,13 @@ export default function Sidebar({
           className={`nav-btn ${view === "accueil" ? "active" : ""}`}
           onClick={() => onView("accueil")}
         >
-          Accueil
+          {texte("nav.home")}
         </button>
         <button
           className={`nav-btn ${view === "chat" ? "active" : ""}`}
           onClick={() => onView("chat")}
         >
-          Chat
+          {texte("nav.chat")}
         </button>
       </div>
       <div className="nav-row">
@@ -58,13 +62,13 @@ export default function Sidebar({
           className={`nav-btn ${view === "models" ? "active" : ""}`}
           onClick={() => onView("models")}
         >
-          Modèles
+          {texte("nav.models")}
         </button>
         <button
           className={`nav-btn ${view === "documents" ? "active" : ""}`}
           onClick={() => onView("documents")}
         >
-          Documents
+          {texte("nav.documents")}
         </button>
       </div>
       <div className="nav-row">
@@ -72,13 +76,13 @@ export default function Sidebar({
           className={`nav-btn ${view === "settings" ? "active" : ""}`}
           onClick={() => onView("settings")}
         >
-          Réglages
+          {texte("nav.settings")}
         </button>
         <button
           className={`nav-btn ${view === "collab" ? "active" : ""}`}
           onClick={() => onView("collab")}
         >
-          Ateliers
+          {texte("nav.workshop")}
         </button>
       </div>
       <div className="nav-row">
@@ -86,19 +90,19 @@ export default function Sidebar({
           className={`nav-btn ${view === "finetune" ? "active" : ""}`}
           onClick={() => onView("finetune")}
         >
-          Fine-tune
+          {texte("nav.finetune")}
         </button>
       </div>
 
       <button className="primary" onClick={onNewChat}>
-        + Nouvelle conversation
+        {texte("nav.newChat")}
       </button>
 
-      <div className="sidebar-section-title">Historique</div>
+      <div className="sidebar-section-title">{texte("nav.history")}</div>
       <div className="conv-list">
         {conversations.length === 0 && (
           <div className="conv-item" style={{ cursor: "default", opacity: 0.5 }}>
-            Aucune conversation
+            {texte("nav.emptyHistory")}
           </div>
         )}
         {conversations.map((c) => (
@@ -125,19 +129,21 @@ export default function Sidebar({
 
       <div className="side-status">
         <div className="status-line">
-          <span>Ollama</span>
+          <span>{texte("status.ollama")}</span>
           <span className={ollamaOk ? "status-ok" : "status-bad"}>
-            {ollamaOk ? `en ligne v${systemInfo?.ollama.version ?? "?"}` : "hors ligne"}
+            {ollamaOk
+              ? `${texte("status.online")} v${systemInfo?.ollama.version ?? "?"}`
+              : texte("status.offline")}
           </span>
         </div>
         {gpu && (
           <>
             <div className="status-line">
-              <span>GPU</span>
+              <span>{texte("status.gpu")}</span>
               <span>{gpu.name.replace("NVIDIA GeForce ", "")}</span>
             </div>
             <div className="status-line">
-              <span>VRAM</span>
+              <span>{texte("status.vram")}</span>
               <span>
                 {(gpu.vram_used_mb / 1024).toFixed(1)} / {(gpu.vram_total_mb / 1024).toFixed(0)} Go
               </span>
@@ -145,13 +151,13 @@ export default function Sidebar({
           </>
         )}
         <div className="status-line">
-          <span>RAM</span>
+          <span>{texte("status.ram")}</span>
           <span>
             {systemInfo ? `${systemInfo.ram.used_gb} / ${systemInfo.ram.total_gb} Go` : "—"}
           </span>
         </div>
         <div className="status-line">
-          <span>Uptime PC</span>
+          <span>{texte("status.uptime")}</span>
           <span>{systemInfo ? fmtUptime(systemInfo.uptime_seconds) : "—"}</span>
         </div>
       </div>

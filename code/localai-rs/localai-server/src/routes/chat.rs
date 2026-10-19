@@ -403,6 +403,16 @@ pub async fn chat(
     }
     {
         let mut parts: Vec<String> = Vec::new();
+        // Langue de reponse choisie (installation / reglages) — defaut francais.
+        let langue = st.db.get_setting("language", "fr");
+        let directive = match langue.as_str() {
+            "en" => "IMPORTANT: Always answer in English.",
+            "es" => "IMPORTANTE: Responde siempre en espanol.",
+            "de" => "WICHTIG: Antworte immer auf Deutsch.",
+            "it" => "IMPORTANTE: Rispondi sempre in italiano.",
+            _ => "Reponds toujours en francais.",
+        };
+        parts.push(directive.to_string());
         if let Some(agent) = resolved_agent.as_deref() {
             let sys = tools::agent_system(&st.settings.root_dir, agent).await;
             if !sys.trim().is_empty() {

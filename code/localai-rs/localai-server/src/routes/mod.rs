@@ -8,6 +8,7 @@ pub mod finetune;
 pub mod health;
 pub mod memory;
 pub mod models;
+pub mod onboarding;
 pub mod outil;
 pub mod sd;
 pub mod security;

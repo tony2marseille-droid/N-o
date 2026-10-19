@@ -1,4 +1,4 @@
-# Comparatifs LocalAI — avant/après Rust · avant/après fusion OpenJarvis
+﻿# Comparatifs LocalAI — avant/après Rust · avant/après fusion OpenJarvis
 
 > Mesures réelles issues de l'exploitation (benchmarks holdout, smoke tests,
 > mesures live nvidia-smi/Ollama). Dernière mise à jour : 2026-10-19.

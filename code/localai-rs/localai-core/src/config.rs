@@ -1,7 +1,7 @@
-use std::path::PathBuf;
+﻿use std::path::PathBuf;
 
-pub const APP_NAME: &str = "LocalAI";
-pub const APP_VERSION: &str = "0.3.0";
+pub const APP_NAME: &str = "Neo";
+pub const APP_VERSION: &str = "0.4.0";
 
 fn env_str(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())

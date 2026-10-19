@@ -2,13 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ChatView from "./components/ChatView";
 import CollabView from "./components/CollabView";
 import DocumentsView from "./components/DocumentsView";
+import ErrorBoundary from "./components/ErrorBoundary";
 import FineTuneView from "./components/FineTuneView";
 import HomeView from "./components/HomeView";
 import ModelsView from "./components/ModelsView";
+import OnboardingWizard from "./components/OnboardingWizard";
 import SettingsView from "./components/SettingsView";
 import Sidebar from "./components/Sidebar";
 import type { Conversation, ModelEntry, SystemInfo } from "./lib/api";
 import { getJSON, sendJSON } from "./lib/api";
+import { normalizeLang, setLang as persistLang, type Lang } from "./lib/i18n";
 
 type Vue =
   | "accueil"
@@ -35,6 +38,11 @@ export default function App() {
   );
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [prefill, setPrefill] = useState<string | null>(null);
+  const [lang, setLangState] = useState<Lang>(() => normalizeLang(localStorage.getItem("neo.lang")));
+  const [boot, setBoot] = useState<{ loaded: boolean; onboarded: boolean }>({
+    loaded: false,
+    onboarded: true,
+  });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastId = useRef(0);
 
@@ -76,6 +84,19 @@ export default function App() {
     return () => clearInterval(timer);
   }, [refreshModels, refreshConversations, refreshSystem]);
 
+  // Chargement des reglages (langue + etat de premiere installation).
+  useEffect(() => {
+    getJSON<{ settings: Record<string, string> }>("/api/settings")
+      .then((d) => {
+        const s = d.settings ?? {};
+        const l = normalizeLang(s.language ?? localStorage.getItem("neo.lang"));
+        setLangState(l);
+        persistLang(l);
+        setBoot({ loaded: true, onboarded: s.onboarded === "1" });
+      })
+      .catch(() => setBoot({ loaded: true, onboarded: true }));
+  }, []);
+
   useEffect(() => {
     localStorage.setItem("localai.model", selectedModel);
   }, [selectedModel]);
@@ -86,6 +107,11 @@ export default function App() {
       if (firstInstalled) setSelectedModel(firstInstalled.tag);
     }
   }, [models, selectedModel]);
+
+  const changerLangue = useCallback((l: Lang) => {
+    setLangState(l);
+    persistLang(l);
+  }, []);
 
   const newChat = useCallback((prefillMsg?: string) => {
     setSelectedConv(null);
@@ -107,6 +133,15 @@ export default function App() {
     [selectedConv, refreshConversations, toast]
   );
 
+  if (!boot.loaded) {
+    return (
+      <div className="app-boot">
+        <div className="core-dot" />
+        <span>NÉO</span>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <Sidebar
@@ -121,41 +156,60 @@ export default function App() {
         onDeleteConv={(id) => void deleteConv(id)}
         onNewChat={() => newChat()}
         systemInfo={systemInfo}
+        lang={lang}
       />
       <main className="main">
-        {view === "accueil" && (
-          <HomeView
-            onView={setView}
-            onNewChat={newChat}
-            systemInfo={systemInfo}
-            models={models}
-          />
-        )}
-        {view === "chat" && (
-          <ChatView
-            models={models}
-            selectedModel={selectedModel}
-            onSelectModel={setSelectedModel}
-            conversationId={selectedConv}
-            initialPrompt={prefill}
-            onConversationCreated={(id) => {
-              setSelectedConv(id);
-              void refreshConversations();
-            }}
-            onAfterResponse={() => void refreshConversations()}
-            toast={toast}
-          />
-        )}
-        {view === "models" && (
-          <ModelsView models={models} refreshModels={refreshModels} toast={toast} />
-        )}
-        {view === "documents" && <DocumentsView toast={toast} />}
-        {view === "collab" && <CollabView models={models} toast={toast} />}
-        {view === "finetune" && <FineTuneView toast={toast} />}
-        {view === "settings" && (
-          <SettingsView systemInfo={systemInfo} refreshSystem={refreshSystem} toast={toast} />
-        )}
+        <ErrorBoundary viewKey={view}>
+          {view === "accueil" && (
+            <HomeView
+              onView={setView}
+              onNewChat={newChat}
+              systemInfo={systemInfo}
+              models={models}
+              lang={lang}
+            />
+          )}
+          {view === "chat" && (
+            <ChatView
+              models={models}
+              selectedModel={selectedModel}
+              onSelectModel={setSelectedModel}
+              conversationId={selectedConv}
+              initialPrompt={prefill}
+              onConversationCreated={(id) => {
+                setSelectedConv(id);
+                void refreshConversations();
+              }}
+              onAfterResponse={() => void refreshConversations()}
+              toast={toast}
+            />
+          )}
+          {view === "models" && (
+            <ModelsView models={models} refreshModels={refreshModels} toast={toast} />
+          )}
+          {view === "documents" && <DocumentsView toast={toast} />}
+          {view === "collab" && <CollabView models={models} toast={toast} />}
+          {view === "finetune" && <FineTuneView toast={toast} />}
+          {view === "settings" && (
+            <SettingsView
+              systemInfo={systemInfo}
+              refreshSystem={refreshSystem}
+              toast={toast}
+              lang={lang}
+              onLangChange={changerLangue}
+            />
+          )}
+        </ErrorBoundary>
       </main>
+      {!boot.onboarded && (
+        <OnboardingWizard
+          toast={toast}
+          onDone={(l) => {
+            changerLangue(l);
+            setBoot({ loaded: true, onboarded: true });
+          }}
+        />
+      )}
       <div className="toast-zone">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`}>

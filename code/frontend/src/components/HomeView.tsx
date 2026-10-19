@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import MatrixRain from "./MatrixRain";
 import type { ModelEntry, SystemInfo } from "../lib/api";
 import { getJSON } from "../lib/api";
+import { type Lang, t } from "../lib/i18n";
 
 type Vue =
   | "accueil"
@@ -17,6 +18,7 @@ interface Props {
   onNewChat: (prefill?: string) => void;
   systemInfo: SystemInfo | null;
   models: ModelEntry[];
+  lang: Lang;
 }
 
 interface ReglesResp {
@@ -88,7 +90,7 @@ const DOSSIERS: Dossier[] = [
     vue: "nouveau-chat",
     glyphe: "◉",
     titre: "Vocal",
-    desc: "Hey Jarvis : client LAN wake-word + TTS (voir LISEZMOI)",
+    desc: "Néo : client vocal LAN (wake-word + TTS)",
   },
   {
     vue: "settings",
@@ -104,7 +106,8 @@ function barre(pct: number, warn = 75, crit = 90): string {
   return "";
 }
 
-export default function HomeView({ onView, onNewChat, systemInfo, models }: Props) {
+export default function HomeView({ onView, onNewChat, systemInfo, models, lang }: Props) {
+  const texte = (key: string) => t(lang, key);
   const [regles, setRegles] = useState<ReglesResp | null>(null);
   const [feedback, setFeedback] = useState<FeedbackResp | null>(null);
   const [vocal, setVocal] = useState<VoiceStatus | null>(null);
@@ -144,12 +147,12 @@ export default function HomeView({ onView, onNewChat, systemInfo, models }: Prop
           <div className="home-brand">
             <span className="home-core" />
             <h1 className="home-title">
-              LOCALAI<span className="cursor-blink" />
+              NÉO<span className="cursor-blink" />
             </h1>
           </div>
           <p className="home-tagline">
             Intelligence locale. Aucun nuage. {systemInfo?.app.version ? `v${systemInfo.app.version} — ` : ""}
-            {agents.length > 0 ? `${agents.length} agents en ligne.` : "agents en ligne."}
+            {agents.length > 0 ? `${agents.length} ${texte("home.agents")}.` : texte("home.agents")}
           </p>
           <div className="home-health">
             <span className={ok(systemInfo?.ollama.available ?? false)}>OLLAMA {systemInfo?.ollama.version ?? ""}</span>
@@ -193,7 +196,7 @@ export default function HomeView({ onView, onNewChat, systemInfo, models }: Prop
         <div className="hud-grid">
           <div className="hud-panel">
             <div className="hud-head">
-              <span className="hud-title">SYSTEME</span>
+              <span className="hud-title">{texte("home.system")}</span>
               <span className="hud-label hud-mono">
                 uptime {systemInfo
                   ? `${Math.floor(systemInfo.uptime_seconds / 3600)}h${String(
@@ -238,7 +241,7 @@ export default function HomeView({ onView, onNewChat, systemInfo, models }: Prop
 
           <div className="hud-panel">
             <div className="hud-head">
-              <span className="hud-title">AUTO-AMELIORATION</span>
+              <span className="hud-title">{texte("home.auto")}</span>
               <span className="hud-label">cycle hebdo</span>
             </div>
             <div className="hud-kv">
@@ -264,7 +267,7 @@ export default function HomeView({ onView, onNewChat, systemInfo, models }: Prop
 
           <div className="hud-panel">
             <div className="hud-head">
-              <span className="hud-title">MODELES & PONT</span>
+              <span className="hud-title">{texte("home.models")}</span>
               <span className="hud-label">fusion LocalAI × OpenJarvis</span>
             </div>
             <div className="hud-kv">
@@ -293,9 +296,9 @@ export default function HomeView({ onView, onNewChat, systemInfo, models }: Prop
         {/* ---------- Actions rapides ---------- */}
         <div className="home-actions">
           <button className="primary" onClick={() => onNewChat()}>
-            ❯_ Nouvelle conversation
+            ❯_ {texte("home.newChat")}
           </button>
-          <button onClick={() => onView("finetune")}>Lancer un cycle d'auto-amelioration</button>
+          <button onClick={() => onView("finetune")}>{texte("home.cycle")}</button>
         </div>
       </div>
     </section>

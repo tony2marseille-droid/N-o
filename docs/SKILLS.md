@@ -1,4 +1,4 @@
-# Skills & pont OpenJarvis — LocalAI
+﻿# Skills & pont OpenJarvis — LocalAI
 
 ## 1. Le skill `localai` (standard agentskills.io)
 
@@ -23,7 +23,7 @@ user_invocable: true
 ```
 Étape 1 — Lancer
 POST http://127.0.0.1:8320/api/outil/execute
-{"tool":"localai_chat","args":{"message":"<demande complète de l'utilisateur>"}}
+{"tool":"cerveau_local","args":{"message":"<demande complète de l'utilisateur>"}}
 → {"job":"j<hex>","etat":"lance"}
 
 Étape 2 — Récupérer (un seul appel, il attend tout seul)
@@ -47,7 +47,7 @@ tours ReAct.
 | Fichiers/dev | `list_dir`, `read_file`, `write_file`, `run_command`, `check_code`, `rechercher_fichiers` |
 | Système | `meteo`, `system_stats`, `volume`, `open_app`, `capture_ecran` |
 | Utilitaires | `calculator`, `get_datetime`, `memoire_ajouter`, `notes`, `presse_papiers` |
-| Pont | `localai_chat` (méta-outil : exécute toute demande via la boucle agent) |
+| Pont | `cerveau_local` (méta-outil : exécute toute demande via la boucle agent) |
 
 Chaque outil a un niveau de permission (`SAFE`/`USER`/`POWER`/`ADMIN`) vérifié
 avant exécution, et la sandbox confine les écritures au workspace.

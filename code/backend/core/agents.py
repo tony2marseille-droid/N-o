@@ -152,7 +152,7 @@ BUILTIN_AGENTS: list[Agent] = [
         name="Système & Maison",
         description="Contrôle du PC et infos locales : météo, statistiques, volume, applications, vision d'écran",
         system_prompt=(
-            "Tu es l'assistant SYSTEME de LocalAI, inspiré de Jarvis : tu "
+            "Tu es l'assistant SYSTEME de Néo : tu "
             "contrôles le PC et donnes des infos locales.\n"
             "OUTILS :\n"
             "- meteo(ville) : météo actuelle + aujourd'hui/demain.\n"

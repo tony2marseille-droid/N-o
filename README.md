@@ -1,4 +1,4 @@
-# LocalAI — Assistant IA 100 % local, style Jarvis
+﻿# Néo — Assistant IA 100 % local
 
 > Chat, agents à outils, génération d'images 4K photoréalistes fidèles au sujet,
 > 3D/STL imprimable, documents bureautiques, RAG, voix française « Hey Jarvis »,
@@ -7,7 +7,7 @@
 LocalAI est un assistant IA personnel auto-hébergé qui tourne entièrement en
 local : un **serveur Rust** ultra-léger (8 Mo de RAM, 3 680 req/s), un backend
 Python spécialisé (kernels SD/TTS/STT/3D), **Ollama** pour l'inférence et un
-fine-tune maison. L'ensemble est orchestré à la manière de Jarvis (Iron Man) :
+fine-tune maison. L'ensemble est orchestré comme un majordome numérique :
 agents spécialisés, pont vocal, auto-amélioration par cycles d'entraînement.
 
 ---
@@ -25,6 +25,7 @@ agents spécialisés, pont vocal, auto-amélioration par cycles d'entraînement.
 | **Voix** | wake-word « Hey Jarvis » (openWakeWord), STT Whisper, TTS SAPI français, client LAN portable |
 | **Auto-amélioration** | feedback utilisateur (1-5) + auto-évaluation (juge interne) + coach hebdomadaire qui transforme les faiblesses en règles injectées dans le prompt |
 | **Fine-tuning maison** | corpus → LoRA (unsloth) → merge → GGUF → bench holdout figé (100 prompts, double juge, Wilson 95 %) → promotion conditionnelle |
+| **Installation guidée** | Assistant de première installation : choix de la langue (FR/EN/ES/DE/IT), détection du matériel, plan de modèles adapté (petits en T1, grands en T3), installation en un clic |
 | **Fusion OpenJarvis** | pont vers le framework Stanford OpenJarvis : skill agentskills.io, jobs asynchrones, 30+ canaux potentiels (Telegram, Discord…), API compatible OpenAI |
 
 ## 🏗️ Architecture (résumé)
