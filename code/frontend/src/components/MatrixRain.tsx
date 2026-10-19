@@ -9,7 +9,7 @@ import { useEffect, useRef } from "react";
 const GLYPHES =
   "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホ0123456789<>[]{}=+*";
 
-export default function MatrixRain() {
+export default function MatrixRain({ background = false }: { background?: boolean }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -92,5 +92,11 @@ export default function MatrixRain() {
     };
   }, []);
 
-  return <canvas ref={ref} className="matrix-rain" aria-hidden="true" />;
+  return (
+    <canvas
+      ref={ref}
+      className={background ? "matrix-rain matrix-rain-fond" : "matrix-rain"}
+      aria-hidden="true"
+    />
+  );
 }

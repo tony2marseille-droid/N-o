@@ -6,6 +6,8 @@ import type {
   ToolActivity,
 } from "../lib/api";
 import { getJSON, postVoiceSSE, streamSSE } from "../lib/api";
+import PipelinePanel, { type PipelineStep } from "./PipelinePanel";
+import MatrixRain from "./MatrixRain";
 
 interface Props {
   models: ModelEntry[];
@@ -52,12 +54,23 @@ function renderContent(text: string) {
   const safe = escapeHtml(text);
   const withLinks = safe.replace(
     /\[([^\]]{1,120})\]\((file:\/\/[^\s)]+|https?:\/\/[^\s)]+)\)/g,
-    (_m, label: string, url: string) =>
-      `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`
+    (_m, label: string, url: string) => {
+      if (/\.(png|jpe?g|webp)(\?.*)?$/i.test(url)) {
+        const chemin = decodeURIComponent(url.replace(/^file:\/\/\/?/i, ""));
+        return `<img class="msg-image" alt="${label}" src="/api/sd/file?path=${encodeURIComponent(chemin)}" />`;
+      }
+      return `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`;
+    }
   );
   const styled = withLinks
     .replace(/\*\*([^*\n]{1,200})\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`\n]{1,200})`/g, "<code>$1</code>");
+    .replace(/`([^`\n]{1,200})`/g, "<code>$1</code>")
+    // Chemins d'images locales cites par l'assistant -> apercu inline.
+    .replace(
+      /\b([A-Za-z]:\\[^\s<>"'`]+?\.(?:png|jpe?g|webp))\b/gi,
+      (_m, p: string) =>
+        `<img class="msg-image" alt="image" src="/api/sd/file?path=${encodeURIComponent(p)}" />`
+    );
   const parts = styled.split(/(<a [^>]*>.*?<\/a>)/g);
   return parts.map((part, i) => {
     if (part.startsWith("<a ")) {
@@ -103,6 +116,25 @@ export default function ChatView({
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const [recording, setRecording] = useState(false);
+  // Pipeline live : agent/modele/ETA + etapes d'outils (panneau Matrix).
+  const [pipeline, setPipeline] = useState<{ agent: string; model: string; etaMs: number | null } | null>(null);
+  const [steps, setSteps] = useState<PipelineStep[]>([]);
+  const bufRef = useRef("");
+  const flushRef = useRef<number | null>(null);
+
+  const flushBuf = useCallback(() => {
+    const s = bufRef.current;
+    if (!s) return;
+    bufRef.current = "";
+    setMessages((prev) => {
+      const copy = [...prev];
+      const last = copy[copy.length - 1];
+      if (!last || last.role !== "assistant") return copy;
+      last.content += s;
+      copy[copy.length - 1] = { ...last };
+      return copy;
+    });
+  }, []);
 
   const attachFiles = useCallback((files: FileList | null) => {
     if (!files) return;
@@ -225,6 +257,16 @@ export default function ChatView({
     } else {
       setMessages((prev) => [...prev, assistantMsg]);
     }
+    setPipeline(null);
+    setSteps([]);
+    // Lissage du streaming : les tokens arrivent par salles irregulieres ;
+    // on les accumule et on affiche par petites volees regulieres (effet
+    // machine a ecrire fluide, sans saccades).
+    bufRef.current = "";
+    if (flushRef.current !== null) {
+      window.clearInterval(flushRef.current);
+    }
+    flushRef.current = window.setInterval(flushBuf, 30);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -252,6 +294,11 @@ export default function ChatView({
               convId = id;
               onConversationCreated(id);
             }
+            setPipeline({
+              agent: String(event.agent ?? ""),
+              model: String(event.model ?? ""),
+              etaMs: typeof event.eta_ms === "number" ? (event.eta_ms as number) : null,
+            });
             setMessages((prev) => {
               const copy = [...prev];
               const last = copy[copy.length - 1];
@@ -266,14 +313,30 @@ export default function ChatView({
               return copy;
             });
           } else if (event.type === "token") {
-            setMessages((prev) => {
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              last.content += event.content as string;
-              finalContent = last.content;
-              return [...copy.slice(0, -1), { ...last }];
-            });
+            bufRef.current += event.content as string;
+          } else if (event.type === "tool_start") {
+            setSteps((prev) => [
+              ...prev,
+              { name: String(event.name), at: Date.now(), done: false },
+            ]);
           } else if (event.type === "tool_exec") {
+            setSteps((prev) => {
+              const copy = [...prev];
+              const idx = copy.findIndex((s) => s.name === event.name && !s.done);
+              const step: PipelineStep = {
+                name: String(event.name),
+                at: idx >= 0 ? copy[idx].at : Date.now(),
+                denied: Boolean(event.denied),
+                preview: String(event.preview ?? ""),
+                done: true,
+              };
+              if (idx >= 0) {
+                copy[idx] = step;
+              } else {
+                copy.push(step);
+              }
+              return copy;
+            });
             setMessages((prev) => {
               const copy = [...prev];
               const last = copy[copy.length - 1];
@@ -287,6 +350,7 @@ export default function ChatView({
               return copy;
             });
           } else if (event.type === "done") {
+            flushBuf();
             const stats: ChatStats = {
               prompt_tokens: event.prompt_tokens as number,
               completion_tokens: event.completion_tokens as number,
@@ -331,6 +395,7 @@ export default function ChatView({
       );
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
+        flushBuf();
         toast(`Erreur de génération : ${err}`, "error");
         setMessages((prev) => {
           const copy = [...prev];
@@ -342,6 +407,11 @@ export default function ChatView({
         });
       }
     } finally {
+      if (flushRef.current !== null) {
+        window.clearInterval(flushRef.current);
+        flushRef.current = null;
+      }
+      flushBuf();
       setStreaming(false);
       abortRef.current = null;
     }
@@ -470,6 +540,8 @@ export default function ChatView({
 
   return (
     <div className="chat-container">
+      {/* Fond dynamique Matrix (derriere les messages, discret). */}
+      <MatrixRain background />
       <div className="view-header">
         <h2>Conversation</h2>
         <select
@@ -529,6 +601,16 @@ export default function ChatView({
           </button>
         )}
       </div>
+
+      {streaming && pipeline && (
+        <PipelinePanel
+          agent={pipeline.agent}
+          model={pipeline.model}
+          etaMs={pipeline.etaMs}
+          steps={steps}
+          streaming={streaming}
+        />
+      )}
 
       <div className="messages">
         {messages.length === 0 && (

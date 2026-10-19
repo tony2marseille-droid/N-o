@@ -79,6 +79,59 @@ fn is_vision_model(tag: &str) -> bool {
     t.contains("vision") || t.contains("vl") || t.contains("llava") || t.contains("qwen2.5vl")
 }
 
+/// Estimation de duree pour l'affichage live (meta.eta_ms) : somme des
+/// durées typiques par outil (ms) — valeurs calibreées sur l'exploitation
+/// reelle (charges de modeles comprises). Defaut 20 s.
+fn eta_ms_pour(tools: &[String]) -> u64 {
+    const TABLE: &[(&str, u64)] = &[
+        ("find_reference_image", 180_000),
+        ("generate_image", 420_000),
+        ("edit_image", 420_000),
+        ("generate_mesh_from_image", 150_000),
+        ("repair_mesh", 90_000),
+        ("validate_mesh", 120_000),
+        ("validate_design", 120_000),
+        ("render_scad", 30_000),
+        ("slice_model", 60_000),
+        ("blender_run", 600_000),
+        ("blender_render", 120_000),
+        ("render_stl_views", 45_000),
+        ("render_preview", 30_000),
+        ("deep_research", 240_000),
+        ("document_create", 25_000),
+        ("web_search", 15_000),
+        ("web_fetch", 15_000),
+        ("image_search", 15_000),
+        ("fetch_image", 15_000),
+        ("analyze_image", 45_000),
+        ("capture_ecran", 30_000),
+        ("meteo", 8_000),
+        ("system_stats", 4_000),
+        ("volume", 3_000),
+        ("open_app", 3_000),
+        ("telecharger_fichier", 30_000),
+        ("convertir_image", 10_000),
+        ("rechercher_fichiers", 5_000),
+        ("presse_papiers", 3_000),
+        ("memoire_ajouter", 3_000),
+        ("notes", 3_000),
+        ("check_code", 20_000),
+        ("cerveau_local", 600_000),
+        ("calculator", 500),
+        ("get_datetime", 500),
+    ];
+    let mut total: u64 = 5_000;
+    for nom in tools {
+        let duree = TABLE
+            .iter()
+            .find(|(n, _)| n == nom)
+            .map(|(_, d)| *d)
+            .unwrap_or(20_000);
+        total += duree;
+    }
+    total
+}
+
 /// Sauvegarde une image jointe (base64 ou data URL) dans le workspace input.
 /// Retourne le chemin absolu (ou None si decodage impossible).
 async fn save_attached_image(root: &std::path::Path, data: &str, horodatage: &str, idx: usize) -> Option<String> {
@@ -495,6 +548,7 @@ pub async fn chat(
         "model": model,
         "agent": resolved_agent.clone().unwrap_or_default(),
         "tools": tool_names.len(),
+        "eta_ms": eta_ms_pour(&tool_names),
     })));
 
     // Garde-fou deterministe : pour une demande d'image 2D (agent "image"),
@@ -568,14 +622,30 @@ pub async fn chat(
             let mut ref_desc: Option<String> = None;
             for round in 0..tools::MAX_TOOL_ROUNDS {
                 let payload = messages_json(&messages, &images2);
-                let (text, mut calls) = match ollama
-                    .chat_tools(&model2, payload, &specs, temperature, 2048)
-                    .await
-                {
+                // Un echec transitoire du LLM ne doit pas perdre le travail
+                // des outils : une nouvelle tentative, puis on persiste une
+                // reponse explicite (jamais de message assistant fantome).
+                let mut tentative = ollama
+                    .chat_tools(&model2, payload.clone(), &specs, temperature, 2048)
+                    .await;
+                if tentative.is_err() {
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    tentative = ollama
+                        .chat_tools(&model2, payload, &specs, temperature, 2048)
+                        .await;
+                }
+                let (text, mut calls) = match tentative {
                     Ok(r) => r,
                     Err(e) => {
-                        let _ = tx.send(sse_data(json!({ "type": "error", "error": e.to_string() })));
-                        return;
+                        let err_txt = format!(
+                            "\n\n\u{26a0} Erreur du modele pendant le travail ({}). \
+                             Les outils ont deja produit leurs fichiers : les chemins \
+                             ci-dessus restent valables.",
+                            e
+                        );
+                        full.push_str(&err_txt);
+                        let _ = tx.send(sse_data(json!({ "type": "token", "content": err_txt })));
+                        break;
                     }
                 };
                 // Garde-fou image 2D (agent "image") : workflow professionnel
@@ -682,6 +752,11 @@ pub async fn chat(
                             }
                         }
                     }
+                    // Evenement live : l'outil commence (le panneau du chat
+                    // affiche « traitement… » puis bascule sur le resultat).
+                    let _ = tx.send(sse_data(json!({
+                        "type": "tool_start", "name": name,
+                    })));
                     let result = tools::execute(&root, name, args, &level).await;
                     let denied = result.starts_with("PERMISSION REFUSEE")
                         || result.starts_with("refusé")
