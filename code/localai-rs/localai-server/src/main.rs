@@ -4,6 +4,7 @@ mod pybridge;
 mod routes;
 mod telegram;
 mod tools;
+mod worker;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -48,6 +49,8 @@ async fn main() {
         ollama,
         jobs: crate::routes::outil::JobStore::new(),
     });
+    // Worker Python chaud (modele OpenJarvis) : demarre avec le serveur.
+    worker::init(state.settings.root_dir.clone());
 
     let cors = CorsLayer::new()
         .allow_origin([
