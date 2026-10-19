@@ -14,9 +14,9 @@ use localai_core::{Settings, APP_NAME, APP_VERSION};
 use tower_http::cors::CorsLayer;
 
 use crate::routes::{
-    benchmark, chat, comms, conversations, documents, extras, finetune, health, memory,
-    models, onboarding, outil, sd, security, system, settings, studio, style_collab, tts,
-    voice,
+    benchmark, chat, comms, connecteurs, conversations, documents, extras, finetune, health,
+    memory, models, onboarding, outil, sd, security, system, settings, studio, style_collab,
+    tts, voice,
 };
 
 #[derive(Clone)]
@@ -62,6 +62,7 @@ async fn main() {
         .merge(chat::router())
         .merge(feedback::router())
         .merge(onboarding::router())
+        .merge(connecteurs::router())
         .merge(outil::router())
         .merge(conversations::router())
         .merge(models::router())

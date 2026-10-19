@@ -48,6 +48,11 @@ export default function SettingsView({
   const [feedback, setFeedback] = useState<FeedbackStats | null>(null);
   const [regles, setRegles] = useState<Regle[]>([]);
   const [coaching, setCoaching] = useState(false);
+  // Connecteurs : Meshy / Telegram / Discord (cles locales, jamais lues en clair).
+  const [connecteurs, setConnecteurs] = useState<Record<string, boolean>>({});
+  const [connecteurSaisie, setConnecteurSaisie] = useState<Record<string, string>>({});
+  const [testsEnCours, setTestsEnCours] = useState<Record<string, boolean>>({});
+  const [testResultats, setTestResultats] = useState<Record<string, string>>({});
 
   const texte = useCallback((key: string) => t(lang, key), [lang]);
 
@@ -66,6 +71,22 @@ export default function SettingsView({
       .catch(() => undefined);
   }, []);
 
+  const refreshConnecteurs = useCallback(() => {
+    getJSON<{ services: { service: string; champs: { champ: string; present: boolean }[] }[] }>(
+      "/api/connecteurs"
+    )
+      .then((d) => {
+        const etat: Record<string, boolean> = {};
+        for (const s of d.services ?? []) {
+          for (const c of s.champs ?? []) {
+            etat[`${s.service}_${c.champ}`] = c.present;
+          }
+        }
+        setConnecteurs(etat);
+      })
+      .catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     getJSON<{ settings: Record<string, string> }>("/api/settings")
       .then((d) => {
@@ -80,7 +101,45 @@ export default function SettingsView({
       .catch(() => undefined);
     refreshMemories();
     refreshFeedback();
-  }, [refreshMemories, refreshFeedback]);
+    refreshConnecteurs();
+  }, [refreshMemories, refreshFeedback, refreshConnecteurs]);
+
+  const enregistrerConnecteur = useCallback(
+    async (service: string, champ: string) => {
+      const valeur = (connecteurSaisie[`${service}_${champ}`] ?? "").trim();
+      try {
+        await sendJSON("/api/connecteurs", "PUT", { service, champ, valeur });
+        toast(valeur ? "Clé enregistrée" : "Clé effacée", "success");
+        refreshConnecteurs();
+      } catch (err) {
+        toast(`Erreur : ${err}`, "error");
+      }
+    },
+    [connecteurSaisie, refreshConnecteurs, toast]
+  );
+
+  const testerConnecteur = useCallback(
+    async (service: string) => {
+      setTestsEnCours((s) => ({ ...s, [service]: true }));
+      setTestResultats((r) => ({ ...r, [service]: "" }));
+      try {
+        const res = await sendJSON<{ ok: boolean; detail: string }>(
+          "/api/connecteurs/test",
+          "POST",
+          { service }
+        );
+        setTestResultats((r) => ({
+          ...r,
+          [service]: `${res.ok ? "✓" : "✗"} ${res.detail}`,
+        }));
+      } catch (err) {
+        setTestResultats((r) => ({ ...r, [service]: `✗ ${err}` }));
+      } finally {
+        setTestsEnCours((s) => ({ ...s, [service]: false }));
+      }
+    },
+    []
+  );
 
   const save = useCallback(
     async (key: string, value: string) => {
@@ -373,6 +432,101 @@ export default function SettingsView({
             >
               {coaching ? texte("common.loading") : texte("settings.coachRun")}
             </button>
+          </div>
+
+          {/* Connexions (cles API optionnelles) */}
+          <div className="panel">
+            <h3>Connexions</h3>
+            <p style={{ color: "var(--text-dim)", fontSize: 12.5, marginTop: 0 }}>
+              Services optionnels — tout fonctionne sans eux. Les clés restent sur ce PC.
+            </p>
+
+            <div className="kv" style={{ display: "block" }}>
+              <span className="k">Meshy — 3D haute qualité (200 crédits/mois gratuits)</span>
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <input
+                  type="password"
+                  placeholder="msy_…"
+                  value={connecteurSaisie.meshy_token ?? ""}
+                  onChange={(e) =>
+                    setConnecteurSaisie((s) => ({ ...s, meshy_token: e.target.value }))
+                  }
+                  style={{ flex: 1 }}
+                />
+                <button onClick={() => void enregistrerConnecteur("meshy", "token")}>💾</button>
+                <button disabled={testsEnCours.meshy} onClick={() => void testerConnecteur("meshy")}>
+                  Tester
+                </button>
+              </div>
+              <div style={{ fontSize: 11.5, marginTop: 4 }}>
+                {connecteurs.meshy_token ? (
+                  <span className="status-ok">clé présente · </span>
+                ) : (
+                  <span style={{ color: "var(--text-faint)" }}>aucune clé · </span>
+                )}
+                {testResultats.meshy}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 4 }}>
+                Usage : demande « génère un modèle 3D meshy de … » (moteur=meshy). Sinon Hunyuan local.
+              </div>
+            </div>
+
+            <div className="kv" style={{ display: "block" }}>
+              <span className="k">Telegram — contrôle à distance</span>
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <input
+                  type="password"
+                  placeholder="123456:ABC-…"
+                  value={connecteurSaisie.telegram_token ?? ""}
+                  onChange={(e) =>
+                    setConnecteurSaisie((s) => ({ ...s, telegram_token: e.target.value }))
+                  }
+                  style={{ flex: 1 }}
+                />
+                <button onClick={() => void enregistrerConnecteur("telegram", "token")}>💾</button>
+                <button disabled={testsEnCours.telegram} onClick={() => void testerConnecteur("telegram")}>
+                  Tester
+                </button>
+              </div>
+              <div style={{ fontSize: 11.5, marginTop: 4 }}>
+                {connecteurs.telegram_token ? (
+                  <span className="status-ok">clé présente · </span>
+                ) : (
+                  <span style={{ color: "var(--text-faint)" }}>aucune clé · </span>
+                )}
+                {testResultats.telegram}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 4 }}>
+                Créer un bot : Telegram → @BotFather → /newbot → copier le token.
+              </div>
+            </div>
+
+            <div className="kv" style={{ display: "block" }}>
+              <span className="k">Discord — contrôle à distance (à venir)</span>
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <input
+                  type="password"
+                  placeholder="MTIz…"
+                  value={connecteurSaisie.discord_token ?? ""}
+                  onChange={(e) =>
+                    setConnecteurSaisie((s) => ({ ...s, discord_token: e.target.value }))
+                  }
+                  style={{ flex: 1 }}
+                />
+                <button onClick={() => void enregistrerConnecteur("discord", "token")}>💾</button>
+                <button disabled={testsEnCours.discord} onClick={() => void testerConnecteur("discord")}>
+                  Tester
+                </button>
+              </div>
+              <div style={{ fontSize: 11.5, marginTop: 4 }}>
+                {connecteurs.discord_token ? (
+                  <span className="status-ok">clé présente · </span>
+                ) : (
+                  <span style={{ color: "var(--text-faint)" }}>aucune clé · </span>
+                )}
+                {testResultats.discord}
+              </div>
+            </div>
           </div>
         </div>
       </div>
