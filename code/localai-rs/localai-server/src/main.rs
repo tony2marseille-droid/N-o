@@ -51,6 +51,26 @@ async fn main() {
     });
     // Worker Python chaud (modele OpenJarvis) : demarre avec le serveur.
     worker::init(state.settings.root_dir.clone());
+    // Nettoyage VRAM : un modele residant 100 % en RAM (charge quand la VRAM
+    // etait occupee) est lent ; on le decharge pour qu'il recharge sur GPU.
+    {
+        let o = state.ollama.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            if let Ok(v) = o.ps().await {
+                if let Some(models) = v.get("models").and_then(|m| m.as_array()) {
+                    for m in models {
+                        let vram = m.get("size_vram").and_then(|x| x.as_i64()).unwrap_or(0);
+                        let nom = m.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                        if vram == 0 && !nom.is_empty() {
+                            let _ = o.unload(nom).await;
+                            tracing::info!("[ollama] modele CPU decharge: {nom}");
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     let cors = CorsLayer::new()
         .allow_origin([

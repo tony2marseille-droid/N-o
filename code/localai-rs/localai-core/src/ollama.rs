@@ -76,6 +76,7 @@ impl Ollama {
         let body = serde_json::json!({
             "messages": messages,
             "think": false,
+            "keep_alive": "60m",
             "options": {
                 "temperature": temperature,
                 "num_predict": num_predict,
@@ -100,6 +101,7 @@ impl Ollama {
             "messages": messages,
             "stream": false,
             "think": false,
+            "keep_alive": "60m",
             "tools": tools,
             "options": {
                 "temperature": temperature,
@@ -167,6 +169,9 @@ impl Ollama {
         }
         req.insert("model".into(), serde_json::Value::from(model));
         req.insert("stream".into(), serde_json::Value::from(true));
+        // Modele resident : evite les rechargements a froid entre messages.
+        req.entry("keep_alive")
+            .or_insert_with(|| serde_json::Value::from("60m"));
         let resp = self
             .client
             .post(format!("{}/api/chat", self.base))
@@ -202,6 +207,60 @@ impl Ollama {
             }
         }
         Ok(full)
+    }
+
+    /// Precharge un modele (chaud pour la prochaine requete, sans generer).
+    /// Si le modele est deja charge mais 100 % CPU (VRAM occupee au moment du
+    /// chargement), il est decharge puis recharge pour viser le GPU.
+    pub async fn preload(&self, model: &str) -> AppResult<()> {
+        let cible = model.split(':').next().unwrap_or(model).to_string();
+        if let Ok(v) = self.ps().await {
+            if let Some(models) = v.get("models").and_then(|m| m.as_array()) {
+                for m in models {
+                    let nom = m.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                    if nom.starts_with(&cible) {
+                        let vram = m.get("size_vram").and_then(|x| x.as_i64()).unwrap_or(0);
+                        let taille = m.get("size").and_then(|x| x.as_i64()).unwrap_or(0);
+                        if vram == 0 && taille > 0 {
+                            let _ = self.unload(model).await;
+                            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        let body = serde_json::json!({
+            "model": model,
+            "prompt": "",
+            "stream": false,
+            "keep_alive": "60m",
+            "options": { "num_predict": 1 },
+        });
+        let _ = self
+            .client
+            .post(format!("{}/api/generate", self.base))
+            .json(&body)
+            .send()
+            .await;
+        Ok(())
+    }
+
+    /// Vrai si le modele (ou son alias sans tag) est charge en memoire.
+    pub async fn loaded_model(&self, model: &str) -> AppResult<bool> {
+        let v = self.ps().await?;
+        let cible = model.split(':').next().unwrap_or(model).to_string();
+        let charges = v
+            .get("models")
+            .and_then(|m| m.as_array())
+            .cloned()
+            .unwrap_or_default();
+        Ok(charges.iter().any(|m| {
+            m.get("name")
+                .and_then(|n| n.as_str())
+                .map(|n| n.starts_with(&cible))
+                .unwrap_or(false)
+        }))
     }
 
     /// Embeddings via /api/embed (nomic-embed-text).

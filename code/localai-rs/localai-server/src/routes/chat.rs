@@ -443,14 +443,19 @@ pub async fn chat(
     // `routeur_adapte`) : une requete courte SANS outil part sur le modele
     // rapide (Q5/Q6), sinon le modele par defaut (Q8). Aucune bascule si des
     // outils sont impliques (qualite de selection d'outil prioritaire).
-    if tool_names.is_empty()
-        && b.model.as_deref().unwrap_or("auto") == "auto"
+    if b.model.as_deref().unwrap_or("auto") == "auto"
         && st.db.get_setting("routeur_adapte", "0") == "1"
     {
         let rapide = st
             .db
             .get_setting("model_rapide", "localai-prog-v9.2-q5km:latest");
-        if !rapide.is_empty() && b.message.chars().count() <= 120 {
+        // Dispatch : par defaut TOUT passe sur le modele rapide (meme
+        // fine-tune, Q5_K_M a ~105 t/s). dispatch_tout=0 restaure l'ancien
+        // comportement (requetes courtes sans outils uniquement).
+        let tout = st.db.get_setting("dispatch_tout", "1") == "1";
+        if !rapide.is_empty()
+            && (tout || (tool_names.is_empty() && b.message.chars().count() <= 120))
+        {
             model = rapide;
         }
     }
@@ -862,11 +867,24 @@ pub async fn chat(
                 "conversation_id": cid,
                 "duration_ms": ms,
             })));
-            // Auto-evaluation non bloquante : un juge leger note l'echange.
+            // Modele chaud pour le prochain message : SD/vision ont pu
+            // l'evincer de la VRAM pendant la boucle d'outils.
+            {
+                let o = ollama.clone();
+                let m = model2.clone();
+                tokio::spawn(async move {
+                    if !o.loaded_model(&m).await.unwrap_or(false) {
+                        let _ = o.preload(&m).await;
+                    }
+                });
+            }
             // Les scores faibles alimentent le coach hebdo (auto-amelioration).
             if full.len() > 60 {
                 let ollama_j = ollama.clone();
                 let db_j = db2.clone();
+                // Juge = le meme modele que le chat (deja charge : aucun
+                // chargement/eviction supplementaire sur 10 Go de VRAM).
+                let modele_juge = model2.clone();
                 let demande: String = b.message.chars().take(1200).collect();
                 let reponse: String = full.chars().take(1500).collect();
                 tokio::spawn(async move {
@@ -878,7 +896,7 @@ pub async fn chat(
                         demande, reponse
                     );
                     let verdict = ollama_j
-                        .chat("qwen3:8b", vec![localai_core::ollama::Msg {
+                        .chat(&modele_juge, vec![localai_core::ollama::Msg {
                             role: "user".into(),
                             content: prompt_juge,
                         }], 0.2, 90)
