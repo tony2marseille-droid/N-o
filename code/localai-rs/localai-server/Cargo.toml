@@ -1,0 +1,22 @@
+[package]
+name = "localai-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+localai-core = { path = "../localai-core" }
+tokio = { workspace = true }
+axum = { workspace = true, features = ["multipart"] }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tower-http = { workspace = true }
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+futures-util = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"

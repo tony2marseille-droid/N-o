@@ -1,0 +1,18 @@
+[workspace]
+members = ["localai-core", "localai-server", "localai-pipeline", "localai-watch"]
+resolver = "2"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "process", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "default-tls"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+tokio-stream = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+futures-util = "0.3"

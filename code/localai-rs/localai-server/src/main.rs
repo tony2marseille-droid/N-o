@@ -1,0 +1,145 @@
+﻿mod error;
+mod feedback;
+mod pybridge;
+mod routes;
+mod telegram;
+mod tools;
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use axum::extract::DefaultBodyLimit;
+use axum::Router;
+use localai_core::{Settings, APP_NAME, APP_VERSION};
+use tower_http::cors::CorsLayer;
+
+use crate::routes::{
+    benchmark, chat, comms, conversations, documents, extras, finetune, health, memory,
+    models, outil, sd, security, system, settings, studio, style_collab, tts, voice,
+};
+
+#[derive(Clone)]
+pub struct AppState {
+    pub settings: Settings,
+    pub db: localai_core::db::Db,
+    pub ollama: localai_core::ollama::Ollama,
+    pub jobs: crate::routes::outil::JobStore,
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("localai_server=info".parse().unwrap()),
+        )
+        .init();
+
+    let settings = Settings::load();
+    settings.ensure_dirs();
+    let db = localai_core::db::Db::open(&settings.db_path())
+        .expect("ouverture SQLite");
+    let ollama = localai_core::ollama::Ollama::new(settings.ollama_host.clone())
+        .expect("client ollama");
+    let state = Arc::new(AppState {
+        settings: settings.clone(),
+        db,
+        ollama,
+        jobs: crate::routes::outil::JobStore::new(),
+    });
+
+    let cors = CorsLayer::new()
+        .allow_origin([
+            "http://localhost:5173".parse().unwrap(),
+            "http://127.0.0.1:5173".parse().unwrap(),
+        ])
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any);
+
+    let mut app: Router = Router::new()
+        .merge(health::router())
+        .merge(chat::router())
+        .merge(feedback::router())
+        .merge(outil::router())
+        .merge(conversations::router())
+        .merge(models::router())
+        .merge(system::router())
+        .merge(settings::router())
+        .merge(memory::router())
+        .merge(tts::router())
+        .merge(documents::router())
+        .merge(benchmark::router())
+        .merge(voice::router())
+        .merge(sd::router())
+        .merge(studio::router())
+        .merge(style_collab::router())
+        .merge(extras::router())
+        .merge(security::router())
+        .merge(comms::router())
+        .merge(finetune::router())
+        .layer(cors)
+        // Images jointes au chat (base64 4K ~10 Mo) : plafond 32 Mo.
+        .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
+        .with_state(state.clone());
+
+    // Frontend statique : dist/ servi, 404 -> index.html (SPA).
+    // index.html en no-store : apres chaque deploy, le navigateur doit
+    // recharger le HTML (sinon l'ancienne UI reste en cache et les
+    // assets haches ont change -> UI fige sur l'ancienne version).
+    let dist = state.settings.root_dir.join("frontend").join("dist");
+    let index = dist.join("index.html");
+    if index.is_file() {
+        tracing::info!("frontend: {}", dist.display());
+        let svc = tower_http::services::ServeDir::new(&dist)
+            .not_found_service(tower_http::services::ServeFile::new(&index));
+        app = app.fallback_service(svc);
+        let idx = index.clone();
+        app = app
+            .route("/", axum::routing::get(move || {
+                let idx = idx.clone();
+                async move { no_store_file(idx).await }
+            }))
+            .route("/index.html", axum::routing::get(move || {
+                let idx2 = index.clone();
+                async move { no_store_file(idx2).await }
+            }));
+    } else {
+        tracing::warn!("pas de frontend dist/");
+    }
+
+    let addr: SocketAddr = format!("{}:{}", settings.host, settings.port)
+        .parse()
+        .expect("adresse");
+    tracing::info!("{APP_NAME} {APP_VERSION} (rust) sur {addr}");
+    telegram::maybe_start(state.clone());
+    let listener = tokio::net::TcpListener::bind(addr).await.expect("bind");
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .expect("serve");
+}
+
+async fn shutdown_signal() {
+    let _ = tokio::signal::ctrl_c().await;
+    tracing::info!("arret demande, vidange...");
+}
+
+/// index.html avec Cache-Control: no-store (anti UI fige apres deploy).
+async fn no_store_file(
+    path: std::path::PathBuf,
+) -> axum::response::Response {
+    use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+    use axum::response::IntoResponse;
+    match tokio::fs::read(&path).await {
+        Ok(bytes) => {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/html; charset=utf-8"),
+            );
+            (headers, bytes).into_response()
+        }
+        Err(_) => (StatusCode::NOT_FOUND, "frontend absent").into_response(),
+    }
+}

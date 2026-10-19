@@ -1,0 +1,39 @@
+# --- Build artifacts ---
+target/
+target-pgo/
+dist/
+node_modules/
+*.exe
+
+# --- Python ---
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# --- Donnees locales (jamais versionner) ---
+data/
+logs/
+workspace/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+
+# --- Modeles (trop volumineux — via Ollama/HF) ---
+*.gguf
+*.safetensors
+*.bin
+*.ckpt
+
+# --- Local ---
+.env
+*.local
+*.log
+.bak*
+*.bak
+source_mirror/
+ops/
+eval/
+llama-cpp-src/
+tools/
