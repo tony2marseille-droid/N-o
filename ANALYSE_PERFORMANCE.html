@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NÉO // Analyse de réactivité — OpenJarvis vs Néo</title>
+<style>
+  :root{
+    --bg:#020603; --panel:rgba(7,22,11,.8); --panel2:rgba(10,32,16,.55);
+    --border:rgba(0,255,65,.18); --border2:rgba(0,255,65,.4);
+    --text:#d8f5de; --dim:rgba(200,245,210,.62); --faint:rgba(200,245,210,.35);
+    --accent:#00ff41; --soft:#7dffa8; --warn:#ffd60a; --red:#ff453a;
+    --bleu:#00d4ff; --mono:"Cascadia Code","JetBrains Mono",Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+    radial-gradient(1100px 640px at 78% -12%, rgba(0,255,65,.07), transparent 62%),
+    var(--bg); color:var(--text); font-family:"Segoe UI",system-ui,sans-serif;
+    font-size:14px; line-height:1.6;}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:999;
+    background:repeating-linear-gradient(0deg,rgba(0,255,65,.015) 0 1px,transparent 1px 3px);}
+  .wrap{max-width:1080px;margin:0 auto;padding:40px 24px 80px}
+  h1{font-family:var(--mono);letter-spacing:8px;color:var(--soft);
+    text-shadow:0 0 22px rgba(0,255,65,.45);font-size:30px;margin:0 0 6px}
+  h2{font-family:var(--mono);letter-spacing:2.5px;color:var(--accent);
+    font-size:15px;text-transform:uppercase;border-bottom:1px solid var(--border);
+    padding-bottom:8px;margin:48px 0 18px}
+  h3{font-size:15px;margin:22px 0 8px;color:var(--soft)}
+  .sub{color:var(--dim);font-family:var(--mono);font-size:12.5px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    padding:18px 22px;margin:14px 0}
+  .verdict{border-color:var(--border2);box-shadow:0 0 30px -10px rgba(0,255,65,.5)}
+  .b{color:var(--accent);font-weight:600}
+  .w{color:var(--warn)}
+  .r{color:var(--red)}
+  .cy{color:var(--bleu)}
+  code,.mono{font-family:var(--mono);font-size:12.5px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  th{font-family:var(--mono);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;
+    color:var(--accent);text-align:left;border-bottom:1px solid var(--border2);padding:8px 10px}
+  td{border-bottom:1px solid rgba(0,255,65,.09);padding:8px 10px;color:var(--text)}
+  td.dim{color:var(--dim)}
+  .org{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:860px){.org{grid-template-columns:1fr}}
+  .box{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:8px 0;
+    background:var(--panel2);position:relative}
+  .box h4{margin:0 0 4px;font-size:13px;font-family:var(--mono);letter-spacing:1px}
+  .box p{margin:0;font-size:12px;color:var(--dim)}
+  .neo .box{border-color:rgba(0,255,65,.35)}
+  .neo .box h4{color:var(--accent)}
+  .oj .box{border-color:rgba(0,212,255,.35)}
+  .oj .box h4{color:var(--bleu)}
+  .hot{border-style:dashed}
+  .badge{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:1px;
+    padding:2px 9px;border-radius:999px;border:1px solid var(--border2);margin-left:8px}
+  .badge.hi{color:#02150a;background:var(--accent);border-color:var(--accent)}
+  .badge.md{color:var(--warn);border-color:var(--warn)}
+  .badge.lo{color:var(--dim)}
+  .badge.eff{color:var(--bleu);border-color:var(--bleu)}
+  .note{font-size:12px;color:var(--faint);margin-top:6px}
+  .arrow{text-align:center;color:var(--faint);font-family:var(--mono);font-size:12px;margin:2px 0}
+  a{color:var(--soft)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>NÉO // RÉACTIVITÉ</h1>
+<div class="sub">Analyse poussée : OpenJarvis (Stanford) vs Néo — où va le temps, quoi emprunter, comment gagner · 2026-10-19</div>
+
+<!-- ===================== VERDICT ===================== -->
+<h2>1 · Verdict en 30 secondes</h2>
+<div class="panel verdict">
+  <p><span class="b">OpenJarvis paraît plus réactif pour une raison structurelle, pas magique :</span>
+  tout son travail se fait <span class="b">dans un seul processus Python déjà chaud</span> — les
+  registres d'agents, de tools et de skills sont en mémoire, les appels LLM partent en async
+  direct vers Ollama (modèle <span class="b">résident</span>, Q4 rapide), et les opérations
+  communes (HTTP, SSRF) sont exécutées par son <span class="cy">extension Rust native</span>.</p>
+  <p><span class="r">Néo, lui, paie une taxe à chaque appel : un sous-processus Python neuf</span>
+  (démarrage + imports = <span class="r">1-4 s × 5-10 appels par demande</span>), des
+  <span class="r">cycles de déchargement/rechargement</span> de modèles (LLM ↔ vision ↔ SD sur 10 Go de VRAM),
+  et un cerveau de chat en Q8 à 30 t/s.</p>
+  <p><span class="b">Le bon plan :</span> garder nos pipelines (qualité supérieure), emprunter
+  le <span class="b">modèle d'exécution</span> d'OpenJarvis (worker chaud, modèle résident,
+  tool-calls natifs). Gain attendu : <span class="b">×3 à ×8 sur la première seconde</span>,
+  <span class="b">−50 à −70 %</span> sur les pipelines longs.</p>
+</div>
+
+<!-- ===================== ORGANIGRAMMES ===================== -->
+<h2>2 · Organigrammes — comment chaque requête circule</h2>
+<div class="org">
+  <div class="box neo">
+    <h4>◈ NÉO (aujourd'hui)</h4>
+    <div class="box">Client (UI Matrix / Telegram / vocal)<p>SSE · REST</p></div>
+    <div class="arrow">▼</div>
+    <div class="box">Serveur Rust :8320<p>route, garde-fous, boucle outils (14 rounds)</p></div>
+    <div class="arrow">▼ (chaque étape)</div>
+    <div class="box hot"><span class="w">pybridge : python.exe NOUVEAU par appel</span>
+      <p>spawn + imports : 1-4 s × 5-10 fois/demande<br>
+      specs, agent_tools, route_agent, chaque outil</p></div>
+    <div class="arrow">▼</div>
+    <div class="box">Ollama :11434<p>localai-prog-latest Q8 (30 t/s)<br>
+      <span class="w">décharge/recharge à chaque vision/SD</span></p></div>
+    <div class="arrow">▼</div>
+    <div class="box">Kernels (sd-cli, Real-ESRGAN, TripoSR, Blender)<p>préchauffage cache : 65 s puis chargement rapide</p></div>
+  </div>
+
+  <div class="box oj">
+    <h4>◈ OpenJarvis</h4>
+    <div class="box">Client (CLI / desktop / canaux)<p>process unique, warm</p></div>
+    <div class="arrow">▼</div>
+    <div class="box">Agent in-process (native_react / orchestrator)<p>boucle ReAct/native tool-calls<br>registres agents+tools+skills EN MÉMOIRE</p></div>
+    <div class="arrow">▼</div>
+    <div class="box"><span class="cy">Extension Rust (openjarvis_rust)</span>
+      <p>HTTP natif, SSRF, rate-limiter — pas de Python pour les opérations communes</p></div>
+    <div class="arrow">▼</div>
+    <div class="box">Ollama :11434<p>modèle résident (keep_alive), Q4 rapide<br>prompt cache stable</p></div>
+    <div class="arrow">▼</div>
+    <div class="box">Traces / télémétrie<p>collecteur async en fond (jamais dans le chemin critique)</p></div>
+  </div>
+</div>
+
+<!-- ===================== OU VA LE TEMPS ===================== -->
+<h2>3 · Où va le temps — décomposition d'une demande « avec outils »</h2>
+<div class="panel">
+<table>
+  <tr><th>Source de latence</th><th>NÉO</th><th>OpenJarvis</th><th>Économisable</th></tr>
+  <tr><td>Spawn Python (routage + specs)</td><td class="w">2-6 s (3-5 spawns avant même le LLM)</td><td class="b">~0 (registres en mémoire)</td><td class="b">2-6 s</td></tr>
+  <tr><td>Spawn Python (chaque outil)</td><td class="w">1-4 s × outils</td><td class="b">~0 (in-process)</td><td class="b">3-10 s</td></tr>
+  <tr><td>Chargement LLM (1ʳᵉ fois)</td><td>30-60 s à froid</td><td>30-60 s (identique)</td><td>— (précharger au boot)</td></tr>
+  <tr><td>Cycles LLM↔vision↔SD</td><td class="r">3-4 × 30-90 s (10 Go VRAM)</td><td class="b">modèle résident, pas de ping-pong</td><td class="b">2-6 min / pipeline</td></tr>
+  <tr><td>Débit tokens (réponse)</td><td class="w">30 t/s (Q8)</td><td class="b">110 t/s (Q4 dispatch)</td><td class="b">×3,7</td></tr>
+  <tr><td>Prompt eval (round 2+)</td><td class="w">cache manqué (prompt instable)</td><td class="b">cache prompt actif</td><td class="b">~50 % des rounds</td></tr>
+  <tr><td>HTTP web (search/fetch)</td><td>httpx dans subprocess</td><td class="cy">Rust natif</td><td>100-300 ms/outil</td></tr>
+  <tr><td>Traces / télémétrie</td><td>SQLite synchrone</td><td class="b">async en fond</td><td>10-40 ms/outil</td></tr>
+</table>
+<div class="note">La météo via Telegram = LLM round 1 (load si froid) + outil + round 2 ≈ 2-3 min : la charge du
+fine-tune Q8 à froid domine — c'est cohérent avec ce que tu as constaté.</div>
+</div>
+
+<!-- ===================== PLUS / MOINS ===================== -->
+<h2>4 · Plus et moins</h2>
+<div class="org">
+  <div class="box neo">
+    <h4>◈ NÉO — plus</h4>
+    <p>• Images 4K fidèles uniques (Kontext 2 passes + QC vision + Real-ESRGAN)<br>
+    • 42 outils métier (3D/STL, documents, bureau, système)<br>
+    • Verrou GPU + sandbox double couche + auto-amélioration coach<br>
+    • Rust : HTTP ultra-rapide, boucle native, jobs/long-poll<br>
+    • Voix FR + Telegram vivant + langue/installation guidée</p>
+    <h4 style="margin-top:14px">◈ NÉO — moins</h4>
+    <p>• <span class="r">pybridge = spawn par appel (le grand coupable)</span><br>
+    • <span class="r">ping-pong VRAM LLM/vision/SD</span><br>
+    • cerveau chat Q8 lent en streaming<br>
+    • traces synchrones, statut poller legacy</p>
+  </div>
+  <div class="box oj">
+    <h4>◈ OpenJarvis — plus</h4>
+    <p>• Process unique chaud : latence perçue minimale<br>
+    • Extension Rust pour HTTP/SSRF/rate-limit<br>
+    • Modèle résident + tool-calls natifs du modèle<br>
+    • Traces/télémétrie async, skills catalog, canaux<br>
+    • Éco-évaluation (énergie/FLOPs) intégrée</p>
+    <h4 style="margin-top:14px">◈ OpenJarvis — moins</h4>
+    <p>• Aucune génération d'images (ni diffusion, ni 4K)<br>
+    • Pas de 3D/STL, documents limités<br>
+    • orienté recherche : lourd à installer<br>
+    • anglais seulement, pas de voix FR</p>
+  </div>
+</div>
+
+<!-- ===================== PLAN ===================== -->
+<h2>5 · Plan d'optimisation — par impact</h2>
+<div class="panel">
+<table>
+  <tr><th>#</th><th>Action</th><th>Emprunté de</th><th>Gain attendu</th><th>Effort</th></tr>
+  <tr><td>1</td><td><b>Worker Python résident</b> — un process chaud qui reçoit les jobs (stdin JSONL) au lieu d'un spawn par appel ; pool de 2 workers</td><td>modèle in-process OpenJarvis · pattern "daemon worker"</td><td><span class="badge hi">3-10 s / demande</span></td><td><span class="badge eff">1-2 jours</span></td></tr>
+  <tr><td>2</td><td><b>Registres en mémoire Rust</b> — portage de specs/agents/routeur côté Rust (fin des pybridge de routage)</td><td>registres natifs OpenJarvis</td><td><span class="badge hi">2-6 s / demande</span></td><td><span class="badge eff">2-3 jours</span></td></tr>
+  <tr><td>3</td><td><b>Modèle rapide par défaut</b> — qwen3:8b Q4 (110 t/s) pour le chat courant ; fine-tune Q8 réservé au code/archi</td><td>dispatch par complexité OpenJarvis</td><td><span class="badge hi">×3,7 débit</span></td><td><span class="badge md">1 h</span></td></tr>
+  <tr><td>4</td><td><b>keep_alive long + ordonnanceur VRAM</b> — vision/champion résidents pendant les chaînes ; décharger UN seul modèle à la fois</td><td>keep_alive Ollama · résidence OpenJarvis</td><td><span class="badge hi">2-6 min / image</span></td><td><span class="badge md">1 jour</span></td></tr>
+  <tr><td>5</td><td><b>Prompt système stable</b> — blocs variables (mémoires, règles) en fin de prompt → prompt cache Ollama actif</td><td>prompt cache llama.cpp</td><td><span class="badge md">~50 % round 2+</span></td><td><span class="badge md">2 h</span></td></tr>
+  <tr><td>6</td><td><b>HTTP natif Rust pour web</b> — web_search/web_fetch exécutés côté Rust (client reqwest + parsing), plus de spawn</td><td>HttpRequestTool Rust d'OpenJarvis</td><td><span class="badge md">0,1-0,3 s / outil</span></td><td><span class="badge eff">1 jour</span></td></tr>
+  <tr><td>7</td><td><b>Traces async</b> — file en mémoire + flush en fond</td><td>TraceCollector OpenJarvis</td><td><span class="badge lo">10-40 ms / outil</span></td><td><span class="badge md">½ jour</span></td></tr>
+</table>
+<div class="note">Actions 1+3+4 = ~90 % du gain perçu. Aucune action ne dégrade la qualité : le fine-tune
+reste le cerveau du code/architecture, la fidélité 4K reste notre signature.</div>
+</div>
+
+<!-- ===================== SOURCES ===================== -->
+<h2>6 · Sources GitHub à étudier</h2>
+<div class="panel">
+  <p><span class="cy">▸ open-jarvis/OpenJarvis</span> — modèle d'exécution : registres en mémoire,
+  engine in-process (engine/ollama.py), extension Rust (rust/crates/openjarvis-python),
+  TraceCollector async, tool_resolver sans spawn. <a href="https://github.com/open-jarvis/OpenJarvis">github.com/open-jarvis/OpenJarvis</a></p>
+  <p><span class="cy">▸ ollama/ollama</span> — keep_alive, num_ctx, prompt cache (KV) : les leviers
+  de résidence que nous sous-utilisons. <a href="https://github.com/ollama/ollama">github.com/ollama/ollama</a></p>
+  <p><span class="cy">▸ Tencent-Hunyuan3D-2</span> — déjà intégré (mini) ; la version 2 (1B) et le
+  MV (multi-vues) pour monter en qualité. <a href="https://github.com/Tencent-Hunyuan/Hunyuan3D-2">github.com/Tencent-Hunyuan/Hunyuan3D-2</a></p>
+  <p><span class="cy">▸ ggml-org/llama.cpp</span> — serveur avec slot management et prompt cache
+  robuste (le pattern à suivre pour les sessions). <a href="https://github.com/ggml-org/llama.cpp">github.com/ggml-org/llama.cpp</a></p>
+  <p><span class="cy">▸ BerriAI/litellm</span> — proxy multi-moteurs + routage par coût/latence
+  (inspiration pour notre routeur adaptatif). <a href="https://github.com/BerriAI/litellm">github.com/BerriAI/litellm</a></p>
+</div>
+
+<div class="sub" style="margin-top:34px">◆ NÉO — analyse interne · génération locale, sans cloud</div>
+</div>
+</body>
+</html>

@@ -17,9 +17,28 @@ pub fn router() -> Router<Arc<crate::AppState>> {
 }
 
 async fn status(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {
-    let v = crate::pybridge::py_json(&st.settings.root_dir,
-        "import asyncio, json; from backend.api.routes_telegram import telegram_status; print(json.dumps(asyncio.run(telegram_status()), default=str))").await?;
-    Ok(Json(v))
+    // Etat reel du poller RUST (l'ancien statut Python pointait sur un
+    // poller supprime -> poller_running toujours faux).
+    let configured = !st.db.get_setting("telegram_token", "").is_empty();
+    let enabled = st.db.get_setting("telegram_enabled", "0") == "1";
+    let model = st.db.get_setting("telegram_model", "");
+    let model = if model.is_empty() { "auto".to_string() } else { model };
+    let sessions = st
+        .db
+        .query_one_json("SELECT COUNT(*) AS n FROM telegram_sessions", &[])?;
+    let n = sessions
+        .as_ref()
+        .and_then(|s| s.get("n"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    Ok(Json(json!({
+        "configured": configured,
+        "enabled": enabled,
+        "model": model,
+        "poller_running": crate::telegram::poller_actif(),
+        "last_error": "",
+        "sessions": n,
+    })))
 }
 
 #[derive(Debug, Deserialize)]

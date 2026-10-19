@@ -75,8 +75,17 @@ async fn enregistrer(
     })?;
     if b.valeur.trim().is_empty() {
         st.db.set_setting(&cle, "")?;
+        // Repercussion : le poller Telegram natif lit la cle telegram_token.
+        if b.service == "telegram" {
+            st.db.set_setting("telegram_token", "")?;
+            st.db.set_setting("telegram_enabled", "0")?;
+        }
     } else {
         st.db.set_setting(&cle, b.valeur.trim())?;
+        if b.service == "telegram" {
+            st.db.set_setting("telegram_token", b.valeur.trim())?;
+            st.db.set_setting("telegram_enabled", "1")?;
+        }
     }
     Ok(Json(json!({ "ok": true, "present": !b.valeur.trim().is_empty() })))
 }
