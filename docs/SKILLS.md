@@ -42,7 +42,7 @@ tours ReAct.
 | Famille | Outils |
 |---|---|
 | Image | `generate_image` (référence, variantes, QC), `edit_image`, `analyze_image`, `find_reference_image`, `image_search`, `fetch_image`, `convertir_image` |
-| Documents | `document_create` (docx/pdf/xlsx), `deep_research`, `web_search`, `web_fetch` |
+| Documents | `document_create` (docx/pdf/xlsx), `deep_research`, `web_search`, `web_fetch`, `telecharger_fichier` |
 | 3D | `render_scad`, `slice_model`, `generate_mesh_from_image`, `mesh_info/repair/boolean/fuse`, `render_stl_views`, `validate_mesh/design`, `render_preview`, `blender_run/render` |
 | Fichiers/dev | `list_dir`, `read_file`, `write_file`, `run_command`, `check_code`, `rechercher_fichiers` |
 | Système | `meteo`, `system_stats`, `volume`, `open_app`, `capture_ecran` |
