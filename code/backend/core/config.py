@@ -3,8 +3,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-APP_NAME = "LocalAI"
-APP_VERSION = "0.3.0"
+APP_NAME = "Neo"
+APP_VERSION = "0.4.0"
 
 
 def _default_root() -> Path:

@@ -95,7 +95,9 @@ async fn video(
 ) -> ApiResult<Json<Value>> {
     // ffmpeg : image fixe + audio -> mp4 (si ffmpeg dispo).
     let out = st.settings.data_dir.join(format!("studio_{}.mp4", chrono::Local::now().format("%Y%m%d%H%M%S")));
-    let mut cmd = tokio::process::Command::new("ffmpeg");
+    let ffmpeg = which_ffmpeg();
+    let bin = ffmpeg.as_str().unwrap_or("ffmpeg").to_string();
+    let mut cmd = tokio::process::Command::new(bin);
     cmd.arg("-y");
     if let Some(img) = b.image { cmd.args(["-loop", "1", "-i", &img]); }
     if let Some(aud) = b.audio { cmd.args(["-i", &aud]); }
@@ -111,9 +113,10 @@ async fn video(
 }
 
 async fn status(State(_st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {
-    let out = tokio::process::Command::new("ffmpeg").arg("-version").output().await;
-    let ok = out.map(|o| o.status.success()).unwrap_or(false);
     let path = which_ffmpeg();
+    let bin = path.as_str().unwrap_or("ffmpeg");
+    let out = tokio::process::Command::new(bin).arg("-version").output().await;
+    let ok = out.map(|o| o.status.success()).unwrap_or(false);
     Ok(Json(json!({
         "ffmpeg": ok,
         "ffmpeg_path": path,

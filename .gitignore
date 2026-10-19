@@ -36,4 +36,4 @@ source_mirror/
 ops/
 eval/
 llama-cpp-src/
-tools/
+/tools/

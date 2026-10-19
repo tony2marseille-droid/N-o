@@ -66,12 +66,19 @@ async fn run(
     }
     let wf = b.workflow.unwrap_or_else(|| "brainstorm".into()).replace('\'', "");
     let task = b.task.replace('\'', "");
-    let model = b.model.unwrap_or_else(|| "auto".into()).replace('\'', "");
+    let model = b
+        .model
+        .unwrap_or_else(|| "localai-prog-latest".into())
+        .replace('\'', "");
     let temp = b.temperature.unwrap_or(0.7).clamp(0.0, 2.0);
-    let v = pybridge::py_json(&st.settings.root_dir, &format!(
-        "import asyncio, json; from backend.core.orchestrator import run_workflow_stream; \
-         events = []; \
-         async def main():\n async for ev in run_workflow_stream('{}', '{}', '{}', {}): events.append(ev)\nasyncio.run(main()); print(json.dumps({{'events': events}}))",
-        wf, task, model, temp)).await?;
+    let code = format!(
+        "import asyncio, json\nfrom backend.core.orchestrator import run_workflow_stream\nevents = []\nasync def main():\n    async for ev in run_workflow_stream('{}', '{}', '{}', {}):\n        events.append(ev)\nasyncio.run(main())\nprint(json.dumps({{'events': events}}))",
+        wf, task, model, temp);
+    let v = pybridge::py_json_timeout(
+        &st.settings.root_dir,
+        &code,
+        std::time::Duration::from_secs(600),
+    )
+    .await?;
     Ok(Json(v))
 }

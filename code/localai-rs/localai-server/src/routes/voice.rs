@@ -48,7 +48,7 @@ async fn transcribe(
         std::fs::write(&tmp, &bytes)
             .map_err(|e| ApiError(localai_core::AppError::Internal(e.to_string())))?;
         let v = pybridge::py_json(&st.settings.root_dir, &format!(
-            "from backend.core.stt import transcribe; print(json.dumps({{'text': transcribe(r'{}')}}))",
+            "from pathlib import Path; from backend.core.stt import transcribe; print(json.dumps(transcribe(Path(r'{}'))))",
             tmp.display())).await;
         let _ = std::fs::remove_file(&tmp);
         let v = v?;

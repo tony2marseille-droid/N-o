@@ -313,7 +313,15 @@ export default function ChatView({
               return copy;
             });
           } else if (event.type === "token") {
-            bufRef.current += event.content as string;
+            setMessages((prev) => {
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (!last || last.role !== "assistant") return copy;
+              const contenu = last.content + (event.content as string);
+              finalContent = contenu;
+              copy[copy.length - 1] = { ...last, content: contenu };
+              return copy;
+            });
           } else if (event.type === "tool_start") {
             setSteps((prev) => [
               ...prev,
@@ -351,6 +359,29 @@ export default function ChatView({
             });
           } else if (event.type === "done") {
             flushBuf();
+            // Repli anti-ecran-vide : si aucun token n'a ete rendu, on
+            // recharge la reponse stockee depuis l'API.
+            if (!finalContent && convId) {
+              const cidDone = convId;
+              window.setTimeout(() => {
+                getJSON<{ messages: DisplayMessage[] }>(
+                  `/api/conversations/${cidDone}/messages`
+                )
+                  .then((data) =>
+                    setMessages(
+                      data.messages
+                        .filter((m) => (m as unknown as { role: string }).role !== "system")
+                        .map((m) => ({
+                          id: m.id,
+                          role: (m as unknown as { role: "user" | "assistant" }).role,
+                          content: m.content,
+                          model: m.model,
+                        }))
+                    )
+                  )
+                  .catch(() => undefined);
+              }, 400);
+            }
             const stats: ChatStats = {
               prompt_tokens: event.prompt_tokens as number,
               completion_tokens: event.completion_tokens as number,
