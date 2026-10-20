@@ -92,6 +92,7 @@ export interface DocumentItem {
   chunk_count: number;
   created_at: string;
   category?: string | null;
+  description?: string | null;
 }
 
 export interface SearchResult {

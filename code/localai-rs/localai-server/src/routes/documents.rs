@@ -18,6 +18,7 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/api/documents/search", post(search))
         .route("/api/documents/fiches", get(fiches))
         .route("/api/documents/classify", post(classify))
+        .route("/api/documents/describe", post(describe))
         .route("/api/documents/:id", delete(remove))
 }
 
@@ -36,6 +37,7 @@ fn ensure_category(st: &Arc<crate::AppState>) {
         return;
     }
     let _ = st.db.execute("ALTER TABLE documents ADD COLUMN category TEXT DEFAULT ''", &[]);
+    let _ = st.db.execute("ALTER TABLE documents ADD COLUMN description TEXT DEFAULT ''", &[]);
     CATEGORY_OK.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
@@ -131,10 +133,66 @@ print(json.dumps({{'ok': os.path.exists(r'{}')}}))",
 async fn list(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {
     ensure_category(&st);
     let rows = st.db.query_all_json(
-        "SELECT id, filename, size_bytes, chunk_count, created_at, category FROM documents ORDER BY id DESC",
+        "SELECT id, filename, size_bytes, chunk_count, created_at, category, description FROM documents ORDER BY id DESC",
         &[],
     )?;
     Ok(Json(json!({ "documents": rows })))
+}
+
+async fn describe_text(st: &Arc<crate::AppState>, filename: &str, excerpt: &str) -> String {
+    let model = st.db.get_setting("model_rapide", "qwen3:8b").to_string();
+    let prompt = format!(
+        "Decris en UNE seule phrase tres courte (15 mots maximum) ce qu est ce \
+document : sa nature ou son role (exemples : corpus d entrainement, code source \
+du projet, notes personnelles, recueil de references). Pas de resume du contenu. \
+Reponds uniquement la phrase, sans introduction.\n\
+Nom du fichier : {}\nDebut du contenu :\n{}",
+        filename, excerpt
+    );
+    let rep = match st
+        .ollama
+        .chat(
+            &model,
+            vec![localai_core::ollama::Msg { role: "user".into(), content: prompt }],
+            0.0,
+            60,
+        )
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return String::new(),
+    };
+    let d = rep.trim().trim_matches(|c| c == '"' || c == '«' || c == '»').to_string();
+    let d = d.trim().to_string();
+    let d: String = d.chars().take(140).collect();
+    d.trim_end_matches('.').trim().to_string()
+}
+
+fn doc_extrait(st: &Arc<crate::AppState>, id: i64) -> (String, String) {
+    let rows = st.db
+        .query_all_json("SELECT filename FROM documents WHERE id=?", &[&id])
+        .unwrap_or_default();
+    let filename = rows
+        .first()
+        .and_then(|r| r.get("filename"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let chunks = st.db
+        .query_all_json(
+            "SELECT content FROM document_chunks WHERE document_id=? ORDER BY position LIMIT 1",
+            &[&id],
+        )
+        .unwrap_or_default();
+    let extrait: String = chunks
+        .first()
+        .and_then(|c| c.get("content"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .chars()
+        .take(400)
+        .collect();
+    (filename, extrait)
 }
 
 async fn fiches(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {
@@ -220,6 +278,46 @@ async fn classify(
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
     Ok(Json(json!({ "classified": done, "remaining": remaining })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DescribeBody {
+    pub limit: Option<i64>,
+}
+
+async fn describe(
+    State(st): State<Arc<crate::AppState>>,
+    Json(b): Json<DescribeBody>,
+) -> ApiResult<Json<Value>> {
+    ensure_category(&st);
+    let limit = b.limit.unwrap_or(8).clamp(1, 20);
+    let rows = st.db.query_all_json(
+        "SELECT id FROM documents WHERE description IS NULL OR description='' ORDER BY id LIMIT ?",
+        &[&limit],
+    )?;
+    let mut done = 0;
+    for r in rows {
+        let id = r.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+        let (filename, extrait) = doc_extrait(&st, id);
+        let d = describe_text(&st, &filename, &extrait).await;
+        if !d.is_empty() {
+            let _ = st.db.execute(
+                "UPDATE documents SET description=? WHERE id=?",
+                &[&d.as_str(), &id],
+            );
+            done += 1;
+        }
+    }
+    let rem = st.db.query_all_json(
+        "SELECT COUNT(*) AS n FROM documents WHERE description IS NULL OR description=''",
+        &[],
+    )?;
+    let remaining = rem
+        .first()
+        .and_then(|r| r.get("n"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    Ok(Json(json!({ "described": done, "remaining": remaining })))
 }
 
 fn unpack_f32le(blob: &[u8]) -> Vec<f32> {
@@ -377,8 +475,12 @@ async fn upload(
         ensure_category(&st);
         let excerpt: String = text.chars().take(400).collect();
         let cat = classify_text(&st, &filename, &excerpt).await;
-        let _ = st.db.execute("UPDATE documents SET category=? WHERE id=?", &[&cat.as_str(), &doc_id]);
-        return Ok(Json(json!({ "id": doc_id, "filename": filename, "chunks": chunks.len(), "category": cat })));
+        let desc = describe_text(&st, &filename, &excerpt).await;
+        let _ = st.db.execute(
+            "UPDATE documents SET category=?, description=? WHERE id=?",
+            &[&cat.as_str(), &desc.as_str(), &doc_id],
+        );
+        return Ok(Json(json!({ "id": doc_id, "filename": filename, "chunks": chunks.len(), "category": cat, "description": desc })));
     }
     Err(ApiError(localai_core::AppError::BadRequest("aucun fichier".into())))
 }

@@ -25,6 +25,19 @@ const CAT_LABELS: Record<string, string> = {
   autre: "Autre",
 };
 
+const CAT_DESCS: Record<string, string> = {
+  programmation: "Fonctions Python demandées et validées : le corpus qui a entraîné le champion.",
+  ia: "Corpus et notes sur l'IA et l'auto-amélioration de Néo.",
+  impression3d: "Meshes, STL et impression 3D.",
+  bricolage: "Projets manuels et conseils pratiques.",
+  cuisine: "Recettes et techniques culinaires.",
+  sante: "Santé et bien-être.",
+  finances: "Budget et finances personnelles.",
+  loisirs: "Passions, jeux et lectures.",
+  science: "Sciences et curiosités.",
+  autre: "Documents divers non rangés ailleurs.",
+};
+
 export default function DocumentsView({ toast }: Props) {
   const [docs, setDocs] = useState<DocumentItem[]>([]);
   const [query, setQuery] = useState("");
@@ -33,9 +46,11 @@ export default function DocumentsView({ toast }: Props) {
   const [fiches, setFiches] = useState<Fiche[]>([]);
   const [nonClasses, setNonClasses] = useState(0);
   const [filtre, setFiltre] = useState("");
-  const [classifying, setClassifying] = useState(false);
+  const [analysing, setAnalysing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const fichesPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const sansDescription = docs.filter((d) => !d.description).length;
 
   const refresh = useCallback(() => {
     getJSON<{ documents: DocumentItem[] }>("/api/documents")
@@ -67,8 +82,8 @@ export default function DocumentsView({ toast }: Props) {
     };
   }, [refresh, refreshFiches]);
 
-  const classifyAll = useCallback(async () => {
-    setClassifying(true);
+  const analyser = useCallback(async () => {
+    setAnalysing(true);
     try {
       for (let i = 0; i < 30; i++) {
         const r = await sendJSON<{ classified: number; remaining: number }>(
@@ -78,11 +93,19 @@ export default function DocumentsView({ toast }: Props) {
         );
         if (r.classified === 0 || r.remaining === 0) break;
       }
-      toast("Documents classés par catégorie", "success");
+      for (let i = 0; i < 30; i++) {
+        const r = await sendJSON<{ described: number; remaining: number }>(
+          "/api/documents/describe",
+          "POST",
+          { limit: 8 }
+        );
+        if (r.described === 0 || r.remaining === 0) break;
+      }
+      toast("Documents classés et décrits", "success");
     } catch {
-      toast("Échec de la classification", "error");
+      toast("Échec de l'analyse", "error");
     } finally {
-      setClassifying(false);
+      setAnalysing(false);
       refresh();
       refreshFiches();
     }
@@ -106,9 +129,7 @@ export default function DocumentsView({ toast }: Props) {
           }
           const data = await resp.json();
           toast(
-            `${data.filename} indexé (${data.chunks} extraits, catégorie : ${
-              CAT_LABELS[data.category] ?? data.category ?? "?"
-            })`,
+            `${data.filename} indexé (${data.chunks} extraits) — ${data.description || (CAT_LABELS[data.category] ?? "à décrire")}`,
             "success"
           );
         } catch (err) {
@@ -151,14 +172,15 @@ export default function DocumentsView({ toast }: Props) {
     [refresh, refreshFiches, toast]
   );
 
-  const docsFiltres = filtre ? docs.filter((d) => (d.category ?? "") === filtre) : docs;
+  const docsFiltres = filtre ? docs.filter((d) => (d.category ?? "") === filtre) : [];
+  const ficheActive = fiches.find((f) => f.category === filtre);
 
   return (
     <>
       <div className="view-header">
         <h2>Documents</h2>
         <span style={{ color: "var(--text-dim)", fontSize: 13 }}>
-          Indexés pour la recherche (RAG)
+          Bibliothèque par catégories (RAG)
         </span>
         <span style={{ flex: 1 }} />
         <input
@@ -179,7 +201,7 @@ export default function DocumentsView({ toast }: Props) {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
               gap: 12,
             }}
           >
@@ -202,12 +224,12 @@ export default function DocumentsView({ toast }: Props) {
                   <img
                     src={`/api/sd/file?path=data/fiches/fiche_${f.category}.jpg`}
                     alt={f.category}
-                    style={{ width: "100%", height: 110, objectFit: "cover", display: "block" }}
+                    style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }}
                   />
                 ) : (
                   <div
                     style={{
-                      height: 110,
+                      height: 100,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -222,97 +244,113 @@ export default function DocumentsView({ toast }: Props) {
                   <div style={{ fontSize: 12.5, fontWeight: 600 }}>
                     {CAT_LABELS[f.category] ?? f.category}
                   </div>
-                  <div style={{ fontSize: 11.5, color: "var(--text-dim)", marginTop: 2 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", margin: "3px 0 4px" }}>
+                    {CAT_DESCS[f.category] ?? ""}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--accent)" }}>
                     {f.count} document{f.count > 1 ? "s" : ""}
                   </div>
                 </div>
               </div>
             ))}
           </div>
-          {(nonClasses > 0 || classifying) && (
-            <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center" }}>
-              <button disabled={classifying} onClick={() => void classifyAll()}>
-                {classifying ? "Classification…" : "Classer les documents"}
+          {((nonClasses > 0 || sansDescription > 0) || analysing) && (
+            <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <button disabled={analysing} onClick={() => void analyser()}>
+                {analysing ? "Analyse…" : "Classer et décrire les documents"}
               </button>
               <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                {nonClasses} non classé{nonClasses > 1 ? "s" : ""}
+                {nonClasses > 0 && `${nonClasses} à classer`}
+                {nonClasses > 0 && sansDescription > 0 && " · "}
+                {sansDescription > 0 && `${sansDescription} à décrire`}
               </span>
             </div>
           )}
         </div>
 
-        <div className="panel" style={{ marginBottom: 14 }}>
-          <h3>Tester la recherche</h3>
-          <div style={{ display: "flex", gap: 10 }}>
-            <input
-              placeholder="Votre question dans les documents…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              style={{ flex: 1 }}
-              onKeyDown={(e) => e.key === "Enter" && void doSearch()}
-            />
-            <button className="primary" onClick={() => void doSearch()}>
-              Chercher
-            </button>
-          </div>
-          {results !== null && (
-            <div style={{ marginTop: 12 }}>
-              {results.length === 0 && (
-                <div style={{ color: "var(--text-dim)", fontSize: 13 }}>Aucun passage trouvé.</div>
-              )}
-              {results.map((r, i) => (
-                <div key={i} className="search-hit">
-                  <div className="search-hit-head">
-                    <span>{r.filename}</span>
-                    <span>score {r.score}</span>
-                  </div>
-                  <div>{r.content.slice(0, 300)}</div>
-                </div>
-              ))}
+        {filtre && ficheActive && (
+          <div className="panel" style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <h3 style={{ margin: 0 }}>{CAT_LABELS[filtre] ?? filtre}</h3>
+              <span className="chip">{docsFiltres.length}</span>
+              <span style={{ flex: 1 }} />
+              <button style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => setFiltre("")}>
+                ✕ Fermer
+              </button>
             </div>
-          )}
-        </div>
-
-        {filtre && (
-          <div style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
-            <span className="chip green" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-              {CAT_LABELS[filtre] ?? filtre} ({docsFiltres.length})
-            </span>
-            <button style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => setFiltre("")}>
-              ✕ Retirer le filtre
-            </button>
+            <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginBottom: 12 }}>
+              {CAT_DESCS[filtre] ?? ""}
+            </div>
+            {docsFiltres.length === 0 && (
+              <div style={{ color: "var(--text-faint)", fontSize: 12.5 }}>
+                Aucun document dans cette catégorie.
+              </div>
+            )}
+            {docsFiltres.map((d) => (
+              <div
+                key={d.id}
+                className="model-card"
+                style={{ marginBottom: 10, borderColor: "var(--border)" }}
+              >
+                <div style={{ fontSize: 13, marginBottom: 4 }}>
+                  {d.description || (
+                    <span style={{ color: "var(--text-faint)" }}>Description à générer…</span>
+                  )}
+                </div>
+                <div className="model-specs">
+                  <span className="chip">{d.filename}</span>
+                  <span className="chip">{(d.size_bytes / 1024).toFixed(0)} Ko</span>
+                  <span className="chip">{d.chunk_count} extraits</span>
+                </div>
+                <div className="model-actions">
+                  <button className="danger" onClick={() => void removeDoc(d.id)}>
+                    Supprimer
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
-        <div className="models-grid">
-          {docsFiltres.length === 0 && (
-            <div style={{ color: "var(--text-faint)" }}>
-              Aucun document{filtre ? " dans cette catégorie" : ""}. Ajoutez des PDF, DOCX, XLSX, TXT…
+        {!filtre && (
+          <div className="panel" style={{ marginBottom: 14 }}>
+            <h3>Tester la recherche</h3>
+            <div style={{ display: "flex", gap: 10 }}>
+              <input
+                placeholder="Votre question dans les documents…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                style={{ flex: 1 }}
+                onKeyDown={(e) => e.key === "Enter" && void doSearch()}
+              />
+              <button className="primary" onClick={() => void doSearch()}>
+                Chercher
+              </button>
             </div>
-          )}
-          {docsFiltres.map((d) => (
-            <div key={d.id} className="model-card">
-              <div className="model-head">
-                <span className="model-name">{d.filename}</span>
-              </div>
-              <div className="model-specs">
-                {d.category && (
-                  <span className="chip" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-                    {CAT_LABELS[d.category] ?? d.category}
-                  </span>
+            {results !== null && (
+              <div style={{ marginTop: 12 }}>
+                {results.length === 0 && (
+                  <div style={{ color: "var(--text-dim)", fontSize: 13 }}>Aucun passage trouvé.</div>
                 )}
-                <span className="chip">{(d.size_bytes / 1024).toFixed(0)} Ko</span>
-                <span className="chip">{d.chunk_count} extraits</span>
-                <span className="chip">{d.created_at.slice(0, 16).replace("T", " ")}</span>
+                {results.map((r, i) => (
+                  <div key={i} className="search-hit">
+                    <div className="search-hit-head">
+                      <span>{r.filename}</span>
+                      <span>score {r.score}</span>
+                    </div>
+                    <div>{r.content.slice(0, 300)}</div>
+                  </div>
+                ))}
               </div>
-              <div className="model-actions">
-                <button className="danger" onClick={() => void removeDoc(d.id)}>
-                  Supprimer
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+            )}
+          </div>
+        )}
+
+        {!filtre && (
+          <div style={{ color: "var(--text-faint)", fontSize: 12.5, textAlign: "center", padding: 8 }}>
+            Cliquez sur une fiche pour découvrir ses documents et leur rôle.
+          </div>
+        )}
       </div>
     </>
   );
