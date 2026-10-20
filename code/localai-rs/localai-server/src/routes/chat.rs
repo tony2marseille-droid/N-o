@@ -116,7 +116,6 @@ fn eta_ms_pour(tools: &[String]) -> u64 {
         ("memoire_ajouter", 3_000),
         ("notes", 3_000),
         ("check_code", 20_000),
-        ("cerveau_local", 600_000),
         ("calculator", 500),
         ("get_datetime", 500),
     ];
@@ -314,7 +313,7 @@ pub async fn chat(
             "ecrire", "écris", "écrire", "cree", "creer", "crée", "créer",
             "genere", "generer", "génère", "générer", "fais", "faire",
             "prepare", "preparer", "préparer", "produis", "produire"];
-        // Agent Systeme : meteo, stats PC, volume, apps, ecran (style Jarvis).
+        // Agent Systeme : meteo, stats PC, volume, apps, ecran.
         let sys_mots = ["meteo", "météo", "temperature", "température", "pluie",
             "pleut", "statistiques", "stats", "ram", "cpu", "gpu", "processeur",
             "disque", "ecran", "écran", "erreur", "capture", "volume", "son",

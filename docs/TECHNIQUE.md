@@ -59,18 +59,13 @@
 - **Verrou GPU global** (msvcrt/fcntl) : une génération à la fois.
 - **`_liberer_vram()`** : décharge les modèles Ollama avant SD/vision.
 
-## 5. Pont OpenJarvis (fusion)
+## 5. API jobs (tâches longues)
 
 - `routes/outil.rs` : **jobs asynchrones** — `POST /api/outil/execute`
   `{"tool","args"}` → `{"job"}` ; `GET /api/outil/job/:id` (+ `?attendre=1`
   long-poll 880 s, refais un GET après).
-- Tool `cerveau_local` (t_pont.py) : consomme le SSE `/api/chat` et renvoie la
-  réponse finale — l'agent OpenJarvis tient en 3-4 tours ReAct.
-- Skill `localai` (SKILL.md, agentskills.io) + correctifs locaux OpenJarvis :
-  `ssrf.py` (liste blanche `OPENJARVIS_SSRF_ALLOW`), `http_request.py`
-  (timeout 600 s / spec 900 s), extension Rust `openjarvis_rust` (maturin).
-- Config OpenJarvis : engine ollama, dispatcher `qwen3:8b`, agent
-  `native_react`, skills ON, profil sécurité `personal`.
+- Le pont Python (`pybridge`) exécute les outils dans des sous-processus avec
+  timeout cohérent (1800 s pour les chaînes longues).
 
 ## 6. Base de données (SQLite WAL)
 

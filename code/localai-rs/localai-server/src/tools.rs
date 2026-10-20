@@ -158,7 +158,7 @@ pub async fn execute(
     if let Some(refus) = precheck(root, name, args) {
         return refus;
     }
-    // Worker chaud : plus de spawn Python par appel (modele OpenJarvis).
+    // Worker chaud : plus de spawn Python par appel.
     if let Some(w) = crate::worker::get() {
         if let Ok(v) = w
             .call(

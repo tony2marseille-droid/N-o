@@ -22,7 +22,7 @@
 Chaque outil déclare un niveau : `SAFE` < `USER` < `POWER` < `ADMIN`.
 Le niveau courant vient du réglage `tool_level` (défaut `USER`). Un appel
 sous le niveau requis est refusé AVANT exécution (message
-`PERMISSION REFUSEE`), y compris depuis le pont OpenJarvis.
+`PERMISSION REFUSEE`).
 
 ## 3. Verrou GPU global
 
@@ -35,13 +35,9 @@ d'attente implicite, timeout d'attente 1 h.
 - Serveur Rust : écoute locale/LAN (`0.0.0.0:8320`) — pare-feu Windows avec
   règle dédiée ; aucun service n'expose le système de fichiers au-delà des
   racines sandbox.
-- **Pont OpenJarvis** : `/api/outil/execute` exécute des outils au niveau
-  configuré — même surface que `/api/chat` (même zone de confiance LAN).
-  Pour une exposition plus large : préférer une clé d'API reverse-proxy.
-- OpenJarvis `jarvis serve` : lié à `127.0.0.1` par défaut (refuse
-  explicitement `0.0.0.0` sans clé API — bien garder ce comportement).
-- **SSRF** : OpenJarvis bloque les IP privées par défaut ; la liste blanche
-  `OPENJARVIS_SSRF_ALLOW` ne doit contenir que les hôtes locaux de confiance.
+- `/api/outil/execute` exécute des outils au niveau configuré — même surface
+  que `/api/chat` (même zone de confiance LAN). Pour une exposition plus
+  large : préférer une clé d'API reverse-proxy.
 
 ## 5. Secrets
 
@@ -54,7 +50,7 @@ d'attente implicite, timeout d'attente 1 h.
 ## 6. Défender / AV
 
 - Exclusions recommandées (les compilateurs et loaders ML génèrent des faux
-  positifs massifs) : `E:\ia`, `E:\LocalAI-Modeles`, `E:\OpenJarvis`,
+  positifs massifs) : `E:\ia`, `E:\LocalAI-Modeles`,
   `E:\localai-rs`, `E:\LocalAI-tmp` + processus `sd-cli.exe`,
   `llama-server.exe`, `ollama.exe`.
 - Sans exclusions, les chargements de modèles peuvent chuter à ~20 Mo/s

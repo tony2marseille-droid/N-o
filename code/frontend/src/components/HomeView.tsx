@@ -159,7 +159,7 @@ export default function HomeView({ onView, onNewChat, systemInfo, models, lang }
             <span className={ok(true)}>SERVEUR :8320</span>
             <span className={ok(vocal?.stt_available)}>STT</span>
             <span className={ok(vocal?.tts_available)}>TTS</span>
-            <span className="hud-mono">PONT OPENJARVIS ✓</span>
+            <span className={ok(true)}>DOCUMENTS RAG ✓</span>
           </div>
         </header>
 
@@ -268,7 +268,7 @@ export default function HomeView({ onView, onNewChat, systemInfo, models, lang }
           <div className="hud-panel">
             <div className="hud-head">
               <span className="hud-title">{texte("home.models")}</span>
-              <span className="hud-label">fusion LocalAI × OpenJarvis</span>
+              <span className="hud-label">100 % local</span>
             </div>
             <div className="hud-kv">
               <span>Modeles installes</span>
@@ -279,7 +279,7 @@ export default function HomeView({ onView, onNewChat, systemInfo, models, lang }
               <span className="hud-strong">{agents.length || 7}</span>
             </div>
             <div className="hud-kv">
-              <span>Dispatcher OpenJarvis</span>
+              <span>Dispatcher rapide</span>
               <span className="hud-strong hud-mono">qwen3:8b</span>
             </div>
             <div className="hud-kv">

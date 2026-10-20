@@ -1,7 +1,7 @@
 ﻿# Néo — Assistant IA 100 % local
 
 > Chat, agents à outils, génération d'images 4K photoréalistes fidèles au sujet,
-> 3D/STL imprimable, documents bureautiques, RAG, voix française « Hey Jarvis »,
+> 3D/STL imprimable, documents bureautiques, RAG, voix française (mot d'éveil),
 > auto-amélioration continue — **aucun cloud, aucune clé API, tout sur votre PC.**
 
 LocalAI est un assistant IA personnel auto-hébergé qui tourne entièrement en
@@ -22,17 +22,16 @@ agents spécialisés, pont vocal, auto-amélioration par cycles d'entraînement.
 | **Documents** | Markdown → Word / PDF / Excel (python-docx, reportlab, openpyxl) + recherche approfondie web multi-étapes |
 | **3D / Impression** | OpenSCAD paramétrique, TripoSR (photo → mesh), réparations/booléens/fusions, rendus Blender, tranchage G-code, contrôle qualité sur 4 vues |
 | **Système** | météo (Open-Meteo), stats PC/GPU, volume, ouverture d'apps, analyse d'écran par vision |
-| **Voix** | wake-word « Hey Jarvis » (openWakeWord), STT Whisper, TTS SAPI français, client LAN portable |
+| **Voix** | mot d'éveil vocal (openWakeWord), STT Whisper, TTS SAPI français, client LAN portable |
 | **Auto-amélioration** | feedback utilisateur (1-5) + auto-évaluation (juge interne) + coach hebdomadaire qui transforme les faiblesses en règles injectées dans le prompt |
 | **Fine-tuning maison** | corpus → LoRA (unsloth) → merge → GGUF → bench holdout figé (100 prompts, double juge, Wilson 95 %) → promotion conditionnelle |
 | **Installation guidée** | Assistant de première installation : choix de la langue (FR/EN/ES/DE/IT), détection du matériel, plan de modèles adapté (petits en T1, grands en T3), installation en un clic |
-| **Fusion OpenJarvis** | pont vers le framework Stanford OpenJarvis : skill agentskills.io, jobs asynchrones, 30+ canaux potentiels (Telegram, Discord…), API compatible OpenAI |
 
 ## 🏗️ Architecture (résumé)
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│  Navigateur (UI Matrix) / Client vocal LAN / OpenJarvis    │
+│  Navigateur (UI Matrix) / Client vocal LAN / Telegram      │
 └──────────────────────────┬─────────────────────────────────┘
                            │ :8320 (SSE + REST)
 ┌──────────────────────────▼─────────────────────────────────┐
@@ -45,8 +44,8 @@ agents spécialisés, pont vocal, auto-amélioration par cycles d'entraînement.
 │  PYTHON (41 outils)       │   │  OLLAMA :11434             │
 │  sdgen · t_image · t_cad  │   │  localai-prog-latest       │
 │  t_mesh · t_blender       │   │  (Qwen3-8B LoRA R16 Q8)    │
-│  t_docs · t_systeme       │   │  qwen2.5vl (vision)        │
-│  t_extra · t_pont         │   │  qwen3:8b (dispatch)       │
+│  t_docs · t_systeme         │   │  qwen2.5vl (vision)        │
+│  t_extra · t_web            │   │  qwen3:8b (dispatch)       │
 └───────────────────────────┘   └────────────────────────────┘
             │
    stable-diffusion.cpp · Real-ESRGAN · TripoSR · Blender · Whisper
@@ -65,16 +64,9 @@ cache** des modèles SD (65 s au lieu de 10-30 min sur SSD QLC).
 | Débit (8 co) | 1 458 req/s | **3 680 req/s** |
 | Empreinte | venv 138 paquets | **exe 7 Mo** |
 
-| | Avant fusion | **Après fusion OpenJarvis** |
-|---|---|---|
-| Orchestration | agents maison | + agents Stanford, skills agentskills.io, canaux |
-| Images 4K | ✓ (local) | ✓ exposée à l'écosystème (jobs + long-poll) |
-| API externe | REST maison | + **compatible OpenAI** (webchat, intégrations) |
-| Vitesse pipeline | 6 min à chaud | jobs + long-poll + préchauffage : fiable à froid |
-
 👉 Détails complets : [`docs/COMPARATIFS.md`](docs/COMPARATIFS.md) ·
 Architecture : [`docs/TECHNIQUE.md`](docs/TECHNIQUE.md) ·
-Pont/skills : [`docs/SKILLS.md`](docs/SKILLS.md) ·
+Outils : [`docs/SKILLS.md`](docs/SKILLS.md) ·
 Sécurité : [`docs/SECURITE.md`](docs/SECURITE.md) ·
 Installation : [`docs/DEPLOIEMENT.md`](docs/DEPLOIEMENT.md)
 
@@ -83,7 +75,6 @@ Installation : [`docs/DEPLOIEMENT.md`](docs/DEPLOIEMENT.md)
 1. **Prérequis** : Windows 10/11, RTX 8 Go+, 32 Go RAM conseillés, Ollama, Rust (build), Python 3.11+.
 2. Suivre [`docs/DEPLOIEMENT.md`](docs/DEPLOIEMENT.md) (serveur, venv, modèles, tâches planifiées).
 3. `cargo build --release` puis lancer `localai-server.exe` → **http://localhost:8320**.
-4. Copier le skill `docs/skills/localai/SKILL.md` dans `~/.openjarvis/skills/localai/` si vous utilisez OpenJarvis.
 
 ## 📁 Structure du dépôt
 

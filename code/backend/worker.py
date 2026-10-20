@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Worker Python residant — modele d'execution emprunte a OpenJarvis.
-
-Un seul process chaud execute les operations frequentes du pont (outils,
-specs, agents, routage). Les modules restent importes une seule fois :
-plus de cout de demarrage Python (1-4 s) par appel.
+"""Worker Python residant : un seul process chaud execute les operations
+frequentes du pont (outils, specs, agents, routage). Les modules restent
+importes une seule fois : plus de cout de demarrage Python (1-4 s) par appel.
 
 Protocole : une ligne JSON par requete sur stdin, une ligne JSON par
 reponse sur stdout. Les print() des outils sont captures et ne polluent

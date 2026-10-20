@@ -11,7 +11,7 @@ function Sync([string]$src, [string]$dst, [string[]]$exclude) {
     Write-Output "OK: $src -> $dst"
 }
 
-New-Item -ItemType Directory -Force -Path "$EXPORT\code", "$EXPORT\docs\skills\localai", "$EXPORT\assets" | Out-Null
+New-Item -ItemType Directory -Force -Path "$EXPORT\code", "$EXPORT\assets" | Out-Null
 
 # --- Rust (sources + manifests, sans target/) ---
 Sync 'E:\localai-rs\localai-core'   "$EXPORT\code\localai-rs\localai-core"   @('target', '__pycache__')
@@ -45,8 +45,8 @@ foreach ($f in @('run_ollama.ps1', 'run_server_boot.ps1', 'run_server_watch.ps1'
 }
 if (Test-Path 'E:\localai-rs\rebuild.bat') { Copy-Item 'E:\localai-rs\rebuild.bat' "$EXPORT\code\scripts\" -Force }
 
-# --- Skill pont (copie deployee) ---
-Copy-Item 'C:\Users\Tony\.openjarvis\skills\localai\SKILL.md' "$EXPORT\docs\skills\localai\SKILL.md" -Force -ErrorAction SilentlyContinue
+# --- Apprentissage par categorie ---
+if (Test-Path 'E:\ia\apprentissage.py') { Copy-Item 'E:\ia\apprentissage.py' "$EXPORT\code\scripts\" -Force }
 
 # --- Nettoyage .bak dans l'export ---
 Get-ChildItem $EXPORT -Recurse -Include '*.bak_*', '*.bak' | Remove-Item -Force -ErrorAction SilentlyContinue

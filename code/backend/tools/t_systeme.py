@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Outils Systeme (style Jarvis) : meteo, stats PC, volume, apps, ecran.
+"""Outils Systeme : meteo, stats PC, volume, apps, ecran.
 
 Toutes les donnees restent locales (meteo : API Open-Meteo, gratuite, sans
 cle). Actions PC (volume/apps/ecran) au niveau POWER (confirmation par

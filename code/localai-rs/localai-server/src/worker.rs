@@ -1,4 +1,4 @@
-//! Worker Python resident — modele d'execution emprunte a OpenJarvis.
+//! Worker Python resident : un seul process chaud pour les outils du pont.
 //!
 //! Un seul process Python chaud (backend/worker.py) execute les operations
 //! frequentes du pont : outils, specs, agents, routage. Supprime le cout de

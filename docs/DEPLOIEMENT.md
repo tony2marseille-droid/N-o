@@ -18,7 +18,6 @@ LOCALAI_ROOT=E:\ia
 OLLAMA_MODELS=E:\LocalAI-Modeles
 OLLAMA_FLASH_ATTENTION=1
 OLLAMA_KV_CACHE_TYPE=q8_0
-OPENJARVIS_SSRF_ALLOW=127.0.0.1,192.168.50.124,localhost
 ```
 
 ## 2. Modèles (Ollama)
@@ -60,31 +59,19 @@ peut laisser une install amputée — symptom : 500 « llama-server binary not
 found » sur tout chat ; solution : recopier `lib\ollama\*` depuis le zip
 officiel).
 
-## 5. Client vocal LAN (« Hey Jarvis »)
+## 5. Client vocal LAN (mot d'éveil)
 
-`voice/jarvis_local.py` : wake-word openWakeWord + VAD + STT serveur +
+`voice/neo_local.py` : wake-word openWakeWord + VAD + STT serveur +
 `/api/chat` + TTS SAPI. Modes wake/push/console.
 
 ```
 pip install openwakeword sounddevice soundfile httpx numpy
-python jarvis_local.py --url http://IP_SERVEUR:8320 --mode wake
+python neo_local.py --url http://IP_SERVEUR:8320 --mode wake
 ```
 
 Le micro et les haut-parleurs restent côté client ; STT/TTS côté serveur.
 
-## 6. Pont OpenJarvis (optionnel)
-
-1. Cloner https://github.com/open-jarvis/OpenJarvis puis `uv sync`.
-2. Python 3.11 dédié hors AppData (protection « untrusted mount point ») :
-   `setx UV_PYTHON_INSTALL_DIR E:\LocalAI-cache\uv-python`.
-3. Config : `~/.openjarvis/config.toml` (voir docs/SKILLS.md §4).
-4. Copier le skill : `docs/skills/localai/SKILL.md` →
-   `~/.openjarvis/skills/localai/SKILL.md`.
-5. Extension native : `uv run maturin develop --release --manifest-path
-   rust/crates/openjarvis-python/Cargo.toml`.
-6. Test : `jarvis ask "Quel temps fait-il a Paris ? Utilise le skill localai."`
-
-## 7. Vérification post-install
+## 6. Vérification post-install
 
 ```bash
 curl http://localhost:8320/api/health          # {"status":"ok"}
@@ -97,7 +84,7 @@ curl -X POST http://localhost:8320/api/outil/execute \
 # puis GET /api/outil/job/<id> jusqu'à fini:true
 ```
 
-## 8. Premier lancement (Néo)
+## 7. Premier lancement (Néo)
 
 Au premier demarrage, l'interface ouvre l'assistant de configuration :
 

@@ -49,7 +49,7 @@ async fn main() {
         ollama,
         jobs: crate::routes::outil::JobStore::new(),
     });
-    // Worker Python chaud (modele OpenJarvis) : demarre avec le serveur.
+    // Worker Python chaud : demarre avec le serveur.
     worker::init(state.settings.root_dir.clone());
     // Nettoyage VRAM : un modele residant 100 % en RAM (charge quand la VRAM
     // etait occupee) est lent ; on le decharge pour qu'il recharge sur GPU.

@@ -28,7 +28,6 @@ fn libelle_etape(nom: &str) -> Option<&'static str> {
         "document_create" => "creation du document…",
         "deep_research" => "recherche approfondie (2-4 min)…",
         "telecharger_fichier" => "telechargement du fichier…",
-        "cerveau_local" => "traitement complet LocalAI…",
         _ => return None,
     };
     Some(libelle)

@@ -26,16 +26,16 @@ const CAT_LABELS: Record<string, string> = {
 };
 
 const CAT_DESCS: Record<string, string> = {
-  programmation: "Fonctions Python demandées et validées : le corpus qui a entraîné le champion.",
-  ia: "Corpus et notes sur l'IA et l'auto-amélioration de Néo.",
-  impression3d: "Meshes, STL et impression 3D.",
-  bricolage: "Projets manuels et conseils pratiques.",
-  cuisine: "Recettes et techniques culinaires.",
-  sante: "Santé et bien-être.",
-  finances: "Budget et finances personnelles.",
-  loisirs: "Passions, jeux et lectures.",
-  science: "Sciences et curiosités.",
-  autre: "Documents divers non rangés ailleurs.",
+  programmation: "Exercices qui ont servi à l'éducation de Néo.",
+  ia: "Textes sur l'intelligence artificielle et l'évolution de Néo.",
+  impression3d: "Objets en 3D et fabrication.",
+  bricolage: "Travaux manuels et réparations.",
+  cuisine: "Recettes et astuces de cuisine.",
+  sante: "Santé et bien-être au quotidien.",
+  finances: "Argent, budget et économies.",
+  loisirs: "Loisirs, jeux et passions.",
+  science: "Sciences expliquées simplement.",
+  autre: "Documents divers.",
 };
 
 export default function DocumentsView({ toast }: Props) {
@@ -47,8 +47,10 @@ export default function DocumentsView({ toast }: Props) {
   const [nonClasses, setNonClasses] = useState(0);
   const [filtre, setFiltre] = useState("");
   const [analysing, setAnalysing] = useState(false);
+  const [appr, setAppr] = useState<{ running: boolean; category: string; etape: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const fichesPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const apprPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const sansDescription = docs.filter((d) => !d.description).length;
 
@@ -74,13 +76,60 @@ export default function DocumentsView({ toast }: Props) {
       .catch(() => undefined);
   }, []);
 
+  const apprAvant = useRef(false);
+  const refreshAppr = useCallback(() => {
+    getJSON<{ running: boolean; category: string; etape: string }>("/api/documents/apprentissage/status")
+      .then((d) => {
+        if (apprAvant.current && !d.running && d.category) {
+          toast(`Néo a fini d'apprendre « ${CAT_LABELS[d.category] ?? d.category} »`, "success");
+          refresh();
+          refreshFiches();
+        }
+        apprAvant.current = d.running;
+        setAppr(d);
+        if (d.running && !apprPollRef.current) {
+          apprPollRef.current = setInterval(refreshAppr, 10000);
+        } else if (!d.running && apprPollRef.current) {
+          clearInterval(apprPollRef.current);
+          apprPollRef.current = null;
+        }
+      })
+      .catch(() => undefined);
+  }, [toast, refresh, refreshFiches]);
+
+  const lancerApprentissage = useCallback(
+    async (category: string) => {
+      try {
+        const r = await sendJSON<{ ok: boolean; detail?: string }>(
+          "/api/documents/apprentissage",
+          "POST",
+          { category }
+        );
+        if (!r.ok) {
+          toast(r.detail ?? "Impossible de lancer", "error");
+          return;
+        }
+        toast(`Néo commence à apprendre « ${CAT_LABELS[category] ?? category} »`, "info");
+        setAppr({ running: true, category, etape: "recherche en cours…" });
+        if (!apprPollRef.current) {
+          apprPollRef.current = setInterval(refreshAppr, 10000);
+        }
+      } catch {
+        toast("Échec du lancement de l'apprentissage", "error");
+      }
+    },
+    [toast, refreshAppr]
+  );
+
   useEffect(() => {
     refresh();
     refreshFiches();
+    refreshAppr();
     return () => {
       if (fichesPollRef.current) clearInterval(fichesPollRef.current);
+      if (apprPollRef.current) clearInterval(apprPollRef.current);
     };
-  }, [refresh, refreshFiches]);
+  }, [refresh, refreshFiches, refreshAppr]);
 
   const analyser = useCallback(async () => {
     setAnalysing(true);
@@ -280,6 +329,22 @@ export default function DocumentsView({ toast }: Props) {
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginBottom: 12 }}>
               {CAT_DESCS[filtre] ?? ""}
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
+              <button
+                className="primary"
+                disabled={appr?.running ?? false}
+                onClick={() => void lancerApprentissage(filtre)}
+              >
+                {appr?.running && appr.category === filtre ? "Néo apprend…" : "Lancer un apprentissage"}
+              </button>
+              {appr?.running && (
+                <span style={{ fontSize: 12, color: "var(--orange)" }}>
+                  {appr.category === filtre
+                    ? `${appr.etape || "en cours…"}`
+                    : `en attente : Néo apprend « ${CAT_LABELS[appr.category] ?? appr.category} »`}
+                </span>
+              )}
             </div>
             {docsFiltres.length === 0 && (
               <div style={{ color: "var(--text-faint)", fontSize: 12.5 }}>

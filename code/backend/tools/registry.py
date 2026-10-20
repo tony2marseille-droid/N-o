@@ -21,7 +21,6 @@ from backend.tools.t_docs import tool_document_create
 from backend.tools.t_extra import (tool_convertir_image, tool_memoire_ajouter,
     tool_notes, tool_presse_papiers, tool_rechercher_fichiers,
     tool_telecharger_fichier)
-from backend.tools.t_pont import tool_cerveau_local
 from backend.tools.t_systeme import (tool_capture_ecran, tool_meteo,
     tool_open_app, tool_system_stats, tool_volume)
 
@@ -49,25 +48,6 @@ class PermissionManager:
 
 
 TOOL_DEFINITIONS: dict[str, dict] = {
-    "cerveau_local": {
-        "level": "USER",
-        "description": (
-            "CERVEAU LOCAL : execute une demande complete via la boucle "
-            "agent locale (image 4K fidele au sujet, document Word/PDF/Excel, "
-            "3D/STL, meteo, stats PC, volume, apps, ecran, recherche "
-            "approfondie) et renvoie la reponse finale avec les chemins des "
-            "fichiers crees. A utiliser pour TOUTE demande creative, "
-            "bureautique ou systeme."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "message": {"type": "string", "description": "la demande complete, en francais naturel"},
-            },
-            "required": ["message"],
-        },
-        "function": lambda args: tool_cerveau_local(args["message"]),
-    },
     "memoire_ajouter": {
         "level": "USER",
         "description": (

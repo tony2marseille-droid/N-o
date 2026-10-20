@@ -37,7 +37,7 @@ fn venv_python(st: &Arc<crate::AppState>) -> std::path::PathBuf {
     st.settings.root_dir.join(".venv").join("Scripts").join("python.exe")
 }
 
-fn now_unix() -> u64 {
+pub(crate) fn now_unix() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -72,7 +72,7 @@ fn clean_tag(s: &str) -> String {
         .collect()
 }
 
-async fn pid_alive(pid: u32) -> bool {
+pub(crate) async fn pid_alive(pid: u32) -> bool {
     if pid == 0 {
         return false;
     }
@@ -86,7 +86,7 @@ async fn pid_alive(pid: u32) -> bool {
     String::from_utf8_lossy(&out.stdout).contains(&format!("\"{pid}\""))
 }
 
-async fn spawn_detached(
+pub(crate) async fn spawn_detached(
     py: &std::path::Path,
     args: &[&str],
     cwd: &std::path::Path,

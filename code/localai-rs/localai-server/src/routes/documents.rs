@@ -19,6 +19,8 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/api/documents/fiches", get(fiches))
         .route("/api/documents/classify", post(classify))
         .route("/api/documents/describe", post(describe))
+        .route("/api/documents/apprentissage", post(apprentissage))
+        .route("/api/documents/apprentissage/status", get(apprentissage_status))
         .route("/api/documents/:id", delete(remove))
 }
 
@@ -142,10 +144,12 @@ async fn list(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> 
 async fn describe_text(st: &Arc<crate::AppState>, filename: &str, excerpt: &str) -> String {
     let model = st.db.get_setting("model_rapide", "qwen3:8b").to_string();
     let prompt = format!(
-        "Decris en UNE seule phrase tres courte (15 mots maximum) ce qu est ce \
-document : sa nature ou son role (exemples : corpus d entrainement, code source \
-du projet, notes personnelles, recueil de references). Pas de resume du contenu. \
-Reponds uniquement la phrase, sans introduction.\n\
+        "Decris en UNE phrase tres courte (15 mots maximum), en francais SIMPLE \
+comprehensible par une personne qui ne fait PAS du tout d informatique, ce que \
+represente ce document (exemples de tournures : exercices qui ont servi a \
+entrainer l IA, notes personnelles, liste de donnees, programme du logiciel, \
+texte de reference). Evite les mots techniques et le jargon. Reponds \
+uniquement la phrase, sans introduction.\n\
 Nom du fichier : {}\nDebut du contenu :\n{}",
         filename, excerpt
     );
@@ -318,6 +322,93 @@ async fn describe(
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
     Ok(Json(json!({ "described": done, "remaining": remaining })))
+}
+
+static APPRENTISSAGE_RUNNING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[derive(Debug, Deserialize)]
+pub struct ApprentissageBody {
+    pub category: String,
+}
+
+fn apprentissage_pid(st: &Arc<crate::AppState>) -> u32 {
+    std::fs::read_to_string(st.settings.data_dir.join("apprentissage.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|m| m.get("pid").and_then(|v| v.as_u64()))
+        .unwrap_or(0) as u32
+}
+
+async fn apprentissage(
+    State(st): State<Arc<crate::AppState>>,
+    Json(b): Json<ApprentissageBody>,
+) -> ApiResult<Json<Value>> {
+    let cat = b.category.trim().to_lowercase();
+    if !CATEGORIES.contains(&cat.as_str()) {
+        return Err(ApiError(localai_core::AppError::BadRequest("categorie inconnue".into())));
+    }
+    if APPRENTISSAGE_RUNNING.load(std::sync::atomic::Ordering::SeqCst) {
+        let ancien = apprentissage_pid(&st);
+        let vivant = ancien > 0 && crate::routes::finetune::pid_alive(ancien).await;
+        if vivant {
+            return Ok(Json(json!({ "ok": false, "detail": "un apprentissage est deja en cours" })));
+        }
+        APPRENTISSAGE_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+    APPRENTISSAGE_RUNNING.store(true, std::sync::atomic::Ordering::SeqCst);
+    let root = st.settings.root_dir.clone();
+    let py = root.join(".venv").join("Scripts").join("python.exe");
+    if !py.is_file() {
+        APPRENTISSAGE_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+        return Err(ApiError(localai_core::AppError::Internal("venv python absent".into())));
+    }
+    let logs = root.join("logs");
+    let _ = std::fs::create_dir_all(&logs);
+    let log = logs.join(format!("apprentissage_{cat}.out"));
+    let pid = match crate::routes::finetune::spawn_detached(&py, &["-u", "apprentissage.py", &cat], &root, &log)
+        .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            APPRENTISSAGE_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+            return Err(ApiError(localai_core::AppError::Internal(format!("lancement apprentissage: {e}"))));
+        }
+    };
+    let meta = json!({ "pid": pid, "category": cat, "started": crate::routes::finetune::now_unix() });
+    let _ = std::fs::write(st.settings.data_dir.join("apprentissage.json"), meta.to_string());
+    Ok(Json(json!({ "ok": true, "category": cat, "pid": pid })))
+}
+
+async fn apprentissage_status(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {
+    let pid = apprentissage_pid(&st);
+    let meta: Value = std::fs::read_to_string(st.settings.data_dir.join("apprentissage.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or(json!({}));
+    let cat = meta.get("category").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    if pid == 0 {
+        return Ok(Json(json!({ "running": false, "category": "", "etape": "" })));
+    }
+    let running = crate::routes::finetune::pid_alive(pid).await;
+    if !running {
+        APPRENTISSAGE_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+    let log = st.settings.root_dir.join("logs").join(format!("apprentissage_{cat}.out"));
+    let etape = std::fs::read_to_string(&log)
+        .map(|t| {
+            t.lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("")
+                .trim()
+                .trim_start_matches("[apprentissage] ")
+                .chars()
+                .take(160)
+                .collect::<String>()
+        })
+        .unwrap_or_default();
+    Ok(Json(json!({ "running": running, "category": cat, "etape": etape })))
 }
 
 fn unpack_f32le(blob: &[u8]) -> Vec<f32> {
