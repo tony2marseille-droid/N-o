@@ -103,3 +103,8 @@ machine via les variables d'environnement `LOCALAI_*`.
 ---
 
 *Développé avec passion, en local, sans cloud.*
+---
+
+*Â© 2026 â€” NÃ©o. Code original publiÃ© sans licence : tous droits rÃ©servÃ©s Ã 
+l'auteur. Voir `docs/DEPENDANCES.md` pour les licences des dÃ©pendances et
+des modÃ¨les.*

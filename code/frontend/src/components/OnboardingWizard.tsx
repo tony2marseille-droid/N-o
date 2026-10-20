@@ -28,6 +28,19 @@ interface Props {
   onDone: (lang: Lang) => void;
 }
 
+const INTERETS: { id: string; label: string; icon: string }[] = [
+  { id: "programmation", label: "Programmation", icon: "⌨" },
+  { id: "ia", label: "Intelligence artificielle", icon: "◈" },
+  { id: "impression3d", label: "Impression 3D", icon: "▤" },
+  { id: "bricolage", label: "Bricolage", icon: "⚒" },
+  { id: "cuisine", label: "Cuisine", icon: "♨" },
+  { id: "sante", label: "Santé", icon: "♥" },
+  { id: "finances", label: "Finances", icon: "◉" },
+  { id: "loisirs", label: "Loisirs", icon: "✦" },
+  { id: "science", label: "Science", icon: "⚛" },
+  { id: "autre", label: "Culture générale", icon: "☐" },
+];
+
 type InstallState = "idle" | "running" | "done" | "error";
 
 export default function OnboardingWizard({ toast, onDone }: Props) {
@@ -37,6 +50,7 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
   const [loading, setLoading] = useState(false);
   const [installs, setInstalls] = useState<Record<string, InstallState>>({});
   const [messages, setMessages] = useState<Record<string, string>>({});
+  const [interets, setInterets] = useState<string[]>([]);
 
   const texte = useCallback((key: string) => t(lang, key), [lang]);
 
@@ -90,17 +104,22 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
     []
   );
 
+  const toggleInteret = useCallback((id: string) => {
+    setInterets((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  }, []);
+
   const terminer = useCallback(async () => {
     try {
       await sendJSON("/api/settings", "PUT", { key: "language", value: lang });
       await sendJSON("/api/settings", "PUT", { key: "onboarded", value: "1" });
       await sendJSON("/api/settings", "PUT", { key: "auto_learn", value: "1" });
+      await sendJSON("/api/settings", "PUT", { key: "interests", value: JSON.stringify(interets) });
       toast("Néo est prêt", "success");
       onDone(lang);
     } catch (err) {
       toast(`Enregistrement impossible : ${err}`, "error");
     }
-  }, [lang, onDone, toast]);
+  }, [lang, interets, onDone, toast]);
 
   const passer = useCallback(async () => {
     try {
@@ -122,7 +141,7 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
             <p>{texte("onboarding.subtitle")}</p>
           </div>
           <span className="onboarding-step">
-            {texte("onboarding.step")} {step}/3
+            {texte("onboarding.step")} {step}/4
           </span>
         </div>
 
@@ -223,13 +242,66 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
 
         {step === 3 && (
           <div className="onboarding-body">
+            <h2>Vos centres d'intérêt</h2>
+            <p className="onboarding-note">
+              Choisissez les sujets que Néo devra apprendre en priorité.
+              Vous pourrez lancer un apprentissage sur chaque fiche, quand vous voulez.
+            </p>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                gap: 8,
+                margin: "12px 0",
+              }}
+            >
+              {INTERETS.map((i) => {
+                const actif = interets.includes(i.id);
+                return (
+                  <button
+                    key={i.id}
+                    onClick={() => toggleInteret(i.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 10px",
+                      border: `1px solid ${actif ? "var(--accent)" : "var(--border)"}`,
+                      color: actif ? "var(--accent)" : "var(--text)",
+                      background: actif ? "rgba(0,255,140,0.06)" : "transparent",
+                      cursor: "pointer",
+                      fontSize: 12.5,
+                    }}
+                  >
+                    <span>{i.icon}</span>
+                    <span>{i.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="onboarding-note">
+              {interets.length === 0
+                ? "Aucun choix — vous pourrez les définir plus tard dans Documents."
+                : `${interets.length} centre${interets.length > 1 ? "s" : ""} d'intérêt sélectionné${interets.length > 1 ? "s" : ""}.`}
+            </div>
+            <div className="onboarding-actions">
+              <button onClick={() => setStep(2)}>◂</button>
+              <button className="primary" onClick={() => setStep(4)}>
+                {texte("onboarding.continue")} ▸
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className="onboarding-body">
             <div className="onboarding-ready">
               <div className="core-dot" />
               <h2>{texte("onboarding.ready")}</h2>
               <p>{texte("onboarding.readyHint")}</p>
             </div>
             <div className="onboarding-actions">
-              <button onClick={() => setStep(2)}>◂</button>
+              <button onClick={() => setStep(3)}>◂</button>
               <button className="primary" onClick={() => void terminer()}>
                 {texte("onboarding.finish")} ▸
               </button>

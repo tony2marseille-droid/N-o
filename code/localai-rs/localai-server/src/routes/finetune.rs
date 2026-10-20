@@ -76,14 +76,36 @@ pub(crate) async fn pid_alive(pid: u32) -> bool {
     if pid == 0 {
         return false;
     }
-    let Ok(out) = tokio::process::Command::new("tasklist")
-        .args(["/NH", "/FO", "CSV", "/FI", &format!("PID eq {pid}")])
-        .output()
-        .await
-    else {
+    // Multi-OS : tasklist (Windows), ps -p (Linux/macOS).
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = tokio::process::Command::new("tasklist");
+        c.args(["/NH", "/FO", "CSV", "/FI", &format!("PID eq {pid}")]);
+        c
+    };
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
+        let mut c = tokio::process::Command::new("ps");
+        c.args(["-p", &pid.to_string()]);
+        c
+    };
+    let Ok(out) = cmd.output().await else {
         return false;
     };
-    String::from_utf8_lossy(&out.stdout).contains(&format!("\"{pid}\""))
+    if !out.status.success() {
+        return false;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    if cfg!(target_os = "windows") {
+        s.contains(&format!("\"{pid}\""))
+    } else {
+        s.lines().any(|l| {
+            l.split_whitespace()
+                .next()
+                .map(|c| c == pid.to_string())
+                .unwrap_or(false)
+        })
+    }
 }
 
 pub(crate) async fn spawn_detached(
