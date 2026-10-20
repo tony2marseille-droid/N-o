@@ -80,8 +80,19 @@ def _detect_gpu() -> dict:
 
 def _ollama_list() -> list[str]:
     try:
+        exe = os.environ.get("OLLAMA_BIN") or ""
+        if not exe:
+            for cand in [
+                r"C:\Users\Tony\AppData\Local\Programs\Ollama\ollama.exe",
+                r"C:\Program Files\Ollama\ollama.exe",
+            ]:
+                if os.path.exists(cand):
+                    exe = cand
+                    break
+        if not exe:
+            exe = "ollama"
         out = subprocess.run(
-            ["ollama", "list"], capture_output=True, text=True, timeout=15,
+            [exe, "list"], capture_output=True, text=True, timeout=15,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return [line.split()[0] for line in out.stdout.strip().splitlines() if line.strip()]
@@ -116,10 +127,32 @@ async def get_status() -> dict:
         sft_entries = _read_jsonl(SFT_FILE)
         rlvr_entries = _read_jsonl(RLVR_FILE)
         manifest = _read_manifest()
-        gguf_exists = GGUF_FILE.exists()
-        gguf_size_mb = round(GGUF_FILE.stat().st_size / (1024 * 1024)) if gguf_exists else 0
+        root_gguf = None
+        try:
+            cands = list(settings.root_dir.glob("localai-v*-q8_0.gguf"))
+            if cands:
+                root_gguf = max(cands, key=lambda p: p.stat().st_mtime)
+        except Exception:
+            root_gguf = None
+        gguf_ref = root_gguf or (GGUF_FILE if GGUF_FILE.exists() else None)
+        gguf_exists = gguf_ref is not None
+        gguf_size_mb = round(gguf_ref.stat().st_size / (1024 * 1024)) if gguf_ref else 0
         models = _ollama_list()
         hw = _detect_gpu()
+        ollama_tag = ""
+        for m in models:
+            if m == "localai-prog-latest":
+                ollama_tag = m
+                break
+        if not ollama_tag:
+            import re
+
+            def _vkey(m: str) -> list[int]:
+                return [int(x) for x in re.findall(r"\d+", m)] or [0]
+
+            progs = [m for m in models if m.startswith("localai-prog-v")]
+            if progs:
+                ollama_tag = max(progs, key=_vkey)
 
         try:
             import sys
@@ -132,6 +165,9 @@ async def get_status() -> dict:
         return {
             "dataset": {
                 "count": len(sft_entries),
+                "sft_count": len(sft_entries),
+                "rlvr_count": len(rlvr_entries),
+                "total": len(sft_entries) + len(rlvr_entries),
                 "topics": _extract_categories(sft_entries),
             },
             "rlvr_dataset": {
@@ -147,10 +183,13 @@ async def get_status() -> dict:
             "model": {
                 "gguf_exists": gguf_exists,
                 "gguf_size_mb": gguf_size_mb,
-                "ollama_imported": any("localai-prog-v2" in m for m in models),
+                "gguf_size_gb": round(gguf_size_mb / 1024, 2),
+                "gguf_path": str(gguf_ref) if gguf_ref else "",
+                "ollama_imported": any("localai-prog" in m for m in models),
+                "ollama_tag": ollama_tag,
                 "finetuned_dir_exists": FINETUNED_DIR.exists(),
             },
-            "hardware": hw,
+            "hardware": {**hw, "vram_gb": round(hw.get("vram_mb", 0) / 1024, 1)},
             "rlvr": {
                 "templates_count": templates_count,
                 "last_run": manifest.get("genere_le") if manifest else None,

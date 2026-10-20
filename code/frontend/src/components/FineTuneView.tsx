@@ -54,9 +54,7 @@ interface ImportStatus {
   running: boolean;
   status: string;
   tag: string;
-}
-
-export default function FineTuneView({ toast }: Props) {
+}export default function FineTuneView({ toast }: Props) {
   const [hardware, setHardware] = useState<HardwareInfo | null>(null);
   const [datasetStats, setDatasetStats] = useState<DatasetStats | null>(null);
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
@@ -80,6 +78,8 @@ export default function FineTuneView({ toast }: Props) {
 
   const rlvrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const trainPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const convertPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const importPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refreshStatus = useCallback(() => {
     getJSON<{ hardware: HardwareInfo; dataset: DatasetStats; model: ModelStatus }>("/api/finetune/status")
@@ -112,15 +112,71 @@ export default function FineTuneView({ toast }: Props) {
       .catch(() => undefined);
   }, [toast]);
 
+  const startConvertPoll = useCallback(() => {
+    if (convertPollRef.current) return;
+    convertPollRef.current = setInterval(() => {
+      getJSON<{ running: boolean; status: string; tag: string; output_path: string }>("/api/finetune/convert/status")
+        .then((d) => {
+          setConvertStatus({ running: d.running, status: d.status, output_path: d.output_path });
+          if (!d.running && convertPollRef.current) {
+            clearInterval(convertPollRef.current);
+            convertPollRef.current = null;
+            setConverting(false);
+            if (d.status === "finished") toast("Conversion GGUF terminée", "success");
+            else if (d.status === "error") toast("Échec de la conversion", "error");
+            refreshStatus();
+          }
+        })
+        .catch(() => undefined);
+    }, 5000);
+  }, [toast, refreshStatus]);
+
+  const startImportPoll = useCallback(() => {
+    if (importPollRef.current) return;
+    importPollRef.current = setInterval(() => {
+      getJSON<{ running: boolean; status: string; tag: string }>("/api/finetune/import-ollama/status")
+        .then((d) => {
+          setImportStatus({ running: d.running, status: d.status, tag: d.tag });
+          if (!d.running && importPollRef.current) {
+            clearInterval(importPollRef.current);
+            importPollRef.current = null;
+            setImporting(false);
+            if (d.status === "finished") toast(`Modèle ${d.tag || "?"} importé dans Ollama`, "success");
+            else if (d.status === "error") toast("Échec de l'import Ollama", "error");
+            refreshStatus();
+          }
+        })
+        .catch(() => undefined);
+    }, 5000);
+  }, [toast, refreshStatus]);
+
   useEffect(() => {
     refreshStatus();
     refreshExamples();
     refreshTrainStatus();
+    getJSON<{ running: boolean }>("/api/finetune/convert/status")
+      .then((d) => {
+        if (d.running) {
+          setConverting(true);
+          startConvertPoll();
+        }
+      })
+      .catch(() => undefined);
+    getJSON<{ running: boolean }>("/api/finetune/import-ollama/status")
+      .then((d) => {
+        if (d.running) {
+          setImporting(true);
+          startImportPoll();
+        }
+      })
+      .catch(() => undefined);
     return () => {
       if (rlvrPollRef.current) clearInterval(rlvrPollRef.current);
       if (trainPollRef.current) clearInterval(trainPollRef.current);
+      if (convertPollRef.current) clearInterval(convertPollRef.current);
+      if (importPollRef.current) clearInterval(importPollRef.current);
     };
-  }, [refreshStatus, refreshExamples, refreshTrainStatus]);
+  }, [refreshStatus, refreshExamples, refreshTrainStatus, startConvertPoll, startImportPoll]);
 
   const addExample = useCallback(async () => {
     if (!newUserMsg.trim() || !newAssistantMsg.trim()) return;
@@ -196,7 +252,7 @@ export default function FineTuneView({ toast }: Props) {
     setTraining(true);
     setTrainStatus(null);
     try {
-      await sendJSON("/api/finetune/train", "POST");
+      await sendJSON("/api/finetune/train", "POST", {});
       toast("Entraînement lancé", "success");
       trainPollRef.current = setInterval(refreshTrainStatus, 10000);
     } catch {
@@ -207,33 +263,31 @@ export default function FineTuneView({ toast }: Props) {
 
   const runConvert = useCallback(async () => {
     setConverting(true);
+    setConvertStatus(null);
     try {
-      const r = await sendJSON<{ status: string; output_path: string }>("/api/finetune/convert", "POST");
-      setConvertStatus({ running: false, status: r.status, output_path: r.output_path });
-      toast("Conversion GGUF terminée", "success");
-      refreshStatus();
+      await sendJSON("/api/finetune/convert", "POST", {});
+      toast("Conversion GGUF lancée", "info");
+      startConvertPoll();
     } catch {
-      setConvertStatus({ running: false, status: "error", output_path: "" });
-      toast("Échec de la conversion", "error");
-    } finally {
       setConverting(false);
+      setConvertStatus({ running: false, status: "error", output_path: "" });
+      toast("Échec du lancement de la conversion", "error");
     }
-  }, [toast, refreshStatus]);
+  }, [toast, startConvertPoll]);
 
   const runImportOllama = useCallback(async () => {
     setImporting(true);
+    setImportStatus(null);
     try {
-      const r = await sendJSON<{ status: string; tag: string }>("/api/finetune/import-ollama", "POST");
-      setImportStatus({ running: false, status: r.status, tag: r.tag });
-      toast(`Modèle ${r.tag} importé dans Ollama`, "success");
-      refreshStatus();
+      await sendJSON("/api/finetune/import-ollama", "POST", {});
+      toast("Import Ollama lancé", "info");
+      startImportPoll();
     } catch {
-      setImportStatus({ running: false, status: "error", tag: "" });
-      toast("Échec de l'import Ollama", "error");
-    } finally {
       setImporting(false);
+      setImportStatus({ running: false, status: "error", tag: "" });
+      toast("Échec du lancement de l'import", "error");
     }
-  }, [toast, refreshStatus]);
+  }, [toast, startImportPoll]);
 
   const badge = (ok: boolean, labelOk: string, labelBad: string) => (
     <span className={`chip ${ok ? "green" : ""}`} style={{ borderColor: ok ? "var(--green)" : "var(--red)", color: ok ? "var(--green)" : "var(--red)" }}>
@@ -264,7 +318,13 @@ export default function FineTuneView({ toast }: Props) {
               </div>
               <div className="kv" style={{ border: "none", flex: "0 0 auto" }}>
                 <span className="k">Tier</span>
-                <span className={`chip ${hardware.tier === "high" ? "green" : ""}`} style={{ borderColor: hardware.tier === "high" ? "var(--green)" : hardware.tier === "medium" ? "var(--orange)" : "var(--red)", color: hardware.tier === "high" ? "var(--green)" : hardware.tier === "medium" ? "var(--orange)" : "var(--red)" }}>
+                <span
+                  className={`chip ${hardware.tier === "T3" ? "green" : ""}`}
+                  style={{
+                    borderColor: hardware.tier === "T3" ? "var(--green)" : hardware.tier === "T2" ? "var(--orange)" : "var(--red)",
+                    color: hardware.tier === "T3" ? "var(--green)" : hardware.tier === "T2" ? "var(--orange)" : "var(--red)",
+                  }}
+                >
                   {hardware.tier}
                 </span>
               </div>
@@ -393,7 +453,7 @@ export default function FineTuneView({ toast }: Props) {
 
         <div className="panel" style={{ marginBottom: 14 }}>
           <h3>Entraînement LoRA</h3>
-          {trainStatus ? (
+          {trainStatus && trainStatus.status !== "idle" && trainStatus.status !== "stopped" ? (
             <>
               <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 10 }}>
                 <div className="kv" style={{ border: "none", flex: "0 0 auto" }}>
@@ -454,16 +514,46 @@ export default function FineTuneView({ toast }: Props) {
           {convertStatus && (
             <div className="kv">
               <span className="k">GGUF</span>
-              <span style={{ fontFamily: "Consolas, monospace", fontSize: 12, color: convertStatus.status === "error" ? "var(--red)" : "var(--green)" }}>
-                {convertStatus.status === "error" ? "échec" : convertStatus.output_path || convertStatus.status}
+              <span
+                style={{
+                  fontFamily: "Consolas, monospace",
+                  fontSize: 12,
+                  color:
+                    convertStatus.status === "error"
+                      ? "var(--red)"
+                      : convertStatus.running
+                      ? "var(--orange)"
+                      : "var(--green)",
+                }}
+              >
+                {convertStatus.status === "error"
+                  ? "échec"
+                  : convertStatus.running
+                  ? "conversion en cours…"
+                  : convertStatus.output_path || convertStatus.status}
               </span>
             </div>
           )}
           {importStatus && (
             <div className="kv">
               <span className="k">Ollama</span>
-              <span style={{ fontFamily: "Consolas, monospace", fontSize: 12, color: importStatus.status === "error" ? "var(--red)" : "var(--green)" }}>
-                {importStatus.status === "error" ? "échec" : importStatus.tag || importStatus.status}
+              <span
+                style={{
+                  fontFamily: "Consolas, monospace",
+                  fontSize: 12,
+                  color:
+                    importStatus.status === "error"
+                      ? "var(--red)"
+                      : importStatus.running
+                      ? "var(--orange)"
+                      : "var(--green)",
+                }}
+              >
+                {importStatus.status === "error"
+                  ? "échec"
+                  : importStatus.running
+                  ? "import en cours…"
+                  : importStatus.tag || importStatus.status}
               </span>
             </div>
           )}

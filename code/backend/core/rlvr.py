@@ -6,7 +6,8 @@ import random
 import sys
 
 sys.path.insert(0, ".")
-from backend.tools.executor import _llm_rapide, tool_check_code  # noqa: E402
+from backend.tools.executor import tool_check_code  # noqa: E402
+from backend.tools.common import _llm_rapide  # noqa: E402
 
 ATELIER = pathlib.Path("data/lora_atelier")
 
