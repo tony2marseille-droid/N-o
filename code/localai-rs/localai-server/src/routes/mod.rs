@@ -1,9 +1,11 @@
-pub mod benchmark;
+﻿pub mod benchmark;
 pub mod chat;
 pub mod comms;
 pub mod connecteurs;
 pub mod conversations;
+pub mod conseil;
 pub mod fournisseurs;
+pub mod veille;
 pub mod documents;
 pub mod extras;
 pub mod finetune;
@@ -20,3 +22,4 @@ pub mod style_collab;
 pub mod system;
 pub mod tts;
 pub mod voice;
+

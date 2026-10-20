@@ -56,6 +56,19 @@ TACHES = [
     ("fonction {f}(s) qui verifie si les crochets/parentheses/aces sont equilibres", "{f}('{[()]}') == True"),
     # --- Taches T2 complementaires (200+ cibles) ---
     # --- Taches T3 : raisonnement algorithmique avance ---
+    # --- Taches scientifiques : physique, chimie, maths appliquees ---
+    ("fonction {f}(m, v) qui calcule l'energie cinetique E=0.5*m*v*v", "{f}(2,3) == 9.0"),
+    ("fonction {f}(m) qui convertit des kg en livres (1kg=2.20462 lbs)", "{f}(10) == 22.0462"),
+    ("fonction {f}(c) qui convertit Celsius en Fahrenheit F=c*9/5+32", "{f}(100) == 212.0"),
+    ("fonction {f}(t, g) qui calcule la hauteur de chute h=0.5*g*t*t", "{f}(2,9.81) == 19.62"),
+    ("fonction {f}(f, l) qui calcule la longueur d'onde v=f*l (v=343 m/s)", "{f}(440,0.78) == 343.0"),
+    ("fonction {f}(n, conc, vol) qui calcule la concentration finale C=n/(conc*vol)", "{f}(1,2,3) == 0.1667"),
+    ("fonction {f}(p, v) qui calcule la pression PV=nRT (R=8.314, T=300K)", "{f}(1,22.4) == 1115.47"),
+    ("fonction {f}(r, h) qui calcule le volume d'un cylindre pi*r*r*h", "{f}(2,10) == 125.66"),
+    ("fonction {f}(a, b, c) qui resout discriminant de ax2+bx+c", "{f}(1,-5,6) == 1"),
+    ("fonction {f}(d, t) qui calcule la vitesse moyenne v=d/t en km/h", "{f}(120,1.5) == 80.0"),
+    ("fonction {f}(i, r, t) qui calcule l'interet compose A=i*(1+r)^t", "{f}(1000,0.05,10) == 1628.89"),
+    ("fonction {f}(f1, f2, d) qui calcule la force gravitationnelle G*m1*m2/d*d", "{f}(1,1,1) == 0.00000000006674"),
     ("fonction {f}(lst) qui renvoie la plus longue sous-sequence croissante (LIS)", "{f}([3,1,8,2,5]) == [1,2,5]"),
     ("fonction {f}(s, mots) qui verifie si s peut etre segmente en mots de la liste (word break)", "{f}('leetcode',['leet','code']) == True"),
     ("fonction {f}(lst) qui renvoie le profit maximal d'un achat puis revente (best trade)", "{f}([7,1,5,3,6,4]) == 5"),

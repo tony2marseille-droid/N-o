@@ -15,9 +15,9 @@ use localai_core::{Settings, APP_NAME, APP_VERSION};
 use tower_http::cors::CorsLayer;
 
 use crate::routes::{
-    benchmark, chat, comms, connecteurs, conversations, documents, extras, finetune, fournisseurs,
-    health, memory, models, onboarding, outil, sd, security, settings, studio, style_collab,
-    system, tts, voice,
+    benchmark, chat, comms, connecteurs, conseil, conversations, documents, extras, finetune,
+    fournisseurs, health, memory, models, onboarding, outil, sd, security, settings, studio,
+    style_collab, system, tts, veille, voice,
 };
 
 #[derive(Clone)]
@@ -108,6 +108,8 @@ async fn main() {
         .merge(security::router())
         .merge(comms::router())
         .merge(fournisseurs::router())
+        .merge(conseil::router())
+        .merge(veille::router())
         .merge(finetune::router())
         .layer(cors)
         // Images jointes au chat (base64 4K ~10 Mo) : plafond 32 Mo.
@@ -219,3 +221,4 @@ async fn no_store_file(
         Err(_) => (StatusCode::NOT_FOUND, "frontend absent").into_response(),
     }
 }
+

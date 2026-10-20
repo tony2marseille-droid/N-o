@@ -78,6 +78,10 @@ interface ImportStatus {
 
   const rlvrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const trainPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [conseilEnCours, setConseilEnCours] = useState(false);
+  const [conseilIdees, setConseilIdees] = useState<{ id: number; titre: string; description: string; faisabilite: number; gain: number; statut: string }[]>([]);
+  const [veilleEnCours, setVeilleEnCours] = useState(false);
+  const [veilleItems, setVeilleItems] = useState<{ source: string; nom: string; url: string; etoiles: number; resume: string; gain: string }[]>([]);
   const convertPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const importPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -154,6 +158,26 @@ interface ImportStatus {
     refreshStatus();
     refreshExamples();
     refreshTrainStatus();
+    getJSON<{ running: boolean; idees: number }>("/api/conseil/status")
+      .then((d) => {
+        setConseilEnCours(d.running);
+        if (d.idees > 0 || d.running) {
+          getJSON<{ idees: typeof conseilIdees }>("/api/conseil/idees")
+            .then((r) => setConseilIdees(r.idees ?? []))
+            .catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
+    getJSON<{ running: boolean; analyses: number }>("/api/veille/status")
+      .then((d) => {
+        setVeilleEnCours(d.running);
+        if (d.analyses > 0 || d.running) {
+          getJSON<{ veille: typeof veilleItems }>("/api/veille")
+            .then((r) => setVeilleItems(r.veille ?? []))
+            .catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
     getJSON<{ running: boolean }>("/api/finetune/convert/status")
       .then((d) => {
         if (d.running) {
@@ -247,6 +271,72 @@ interface ImportStatus {
       setRlvrRunning(false);
     }
   }, [toast, refreshExamples, refreshStatus]);
+
+  const lancerConseil = useCallback(async () => {
+    setConseilEnCours(true);
+    try {
+      await sendJSON("/api/conseil/lancer", "POST", {});
+      toast("Conseil lancé — 100 idées en génération + validation…", "info");
+      const poll = setInterval(() => {
+        getJSON<{ running: boolean; idees: number }>("/api/conseil/status")
+          .then((d) => {
+            if (d.idees > 0) {
+              getJSON<{ idees: typeof conseilIdees }>("/api/conseil/idees")
+                .then((r) => setConseilIdees(r.idees ?? []))
+                .catch(() => undefined);
+            }
+            if (!d.running) {
+              clearInterval(poll);
+              setConseilEnCours(false);
+              toast("Conseil terminé", "success");
+            }
+          })
+          .catch(() => undefined);
+      }, 15000);
+    } catch {
+      setConseilEnCours(false);
+      toast("Échec du lancement du conseil", "error");
+    }
+  }, [toast]);
+
+  const lancerIdee = useCallback(async (id: number) => {
+    try {
+      await sendJSON(`/api/conseil/idee/${id}/lancer`, "POST", {});
+      toast(`Idée #${id} lancée — le dev agent travaille`, "info");
+      getJSON<{ idees: typeof conseilIdees }>("/api/conseil/idees")
+        .then((r) => setConseilIdees(r.idees ?? []))
+        .catch(() => undefined);
+    } catch {
+      toast("Échec du lancement", "error");
+    }
+  }, [toast]);
+
+  const lancerVeille = useCallback(async () => {
+    setVeilleEnCours(true);
+    try {
+      await sendJSON("/api/veille/lancer", "POST", {});
+      toast("Veille lancée — GitHub + Hugging Face…", "info");
+      const poll = setInterval(() => {
+        getJSON<{ running: boolean; analyses: number }>("/api/veille/status")
+          .then((d) => {
+            if (d.analyses > 0) {
+              getJSON<{ veille: typeof veilleItems }>("/api/veille")
+                .then((r) => setVeilleItems(r.veille ?? []))
+                .catch(() => undefined);
+            }
+            if (!d.running) {
+              clearInterval(poll);
+              setVeilleEnCours(false);
+              toast("Veille terminée", "success");
+            }
+          })
+          .catch(() => undefined);
+      }, 20000);
+    } catch {
+      setVeilleEnCours(false);
+      toast("Échec du lancement de la veille", "error");
+    }
+  }, [toast]);
 
   const runTrain = useCallback(async () => {
     setTraining(true);
@@ -555,6 +645,105 @@ interface ImportStatus {
                   ? "import en cours…"
                   : importStatus.tag || importStatus.status}
               </span>
+            </div>
+          )}
+        </div>
+
+        <div className="panel" style={{ marginBottom: 14 }}>
+          <h3>Conseil — les 100 idées</h3>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+            <button
+              className="primary"
+              disabled={conseilEnCours}
+              onClick={() => void lancerConseil()}
+            >
+              {conseilEnCours ? "Le conseil délibère…" : "Lancer le conseil"}
+            </button>
+            {conseilIdees.length > 0 && (
+              <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                {conseilIdees.length} idées validées par le conseil
+              </span>
+            )}
+          </div>
+          {conseilIdees.length > 0 && (
+            <div style={{ maxHeight: 400, overflowY: "auto" }}>
+              {conseilIdees.map((idee) => (
+                <div
+                  key={idee.id}
+                  className="model-card"
+                  style={{ marginBottom: 8, borderColor:
+                    idee.statut === "terminee" ? "var(--green)" :
+                    idee.statut === "en_cours" ? "var(--orange)" : "var(--border)" }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                    #{idee.id} · {idee.titre}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 6 }}>
+                    {idee.description}
+                  </div>
+                  <div className="model-specs" style={{ marginBottom: 6 }}>
+                    <span className="chip">faisabilité {idee.faisabilite}/5</span>
+                    <span className="chip">gain {idee.gain}/5</span>
+                    <span className="chip">{idee.statut}</span>
+                  </div>
+                  {(idee.statut === "proposee" || idee.statut === "rejetee") && (
+                    <button
+                      className="primary"
+                      style={{ padding: "4px 14px", fontSize: 12 }}
+                      onClick={() => void lancerIdee(idee.id)}
+                    >
+                      Lancer cette amélioration
+                    </button>
+                  )}
+                  {idee.statut === "en_cours" && (
+                    <span style={{ fontSize: 12, color: "var(--orange)" }}>⏳ Implémentation en cours…</span>
+                  )}
+                  {idee.statut === "terminee" && (
+                    <span style={{ fontSize: 12, color: "var(--green)" }}>✓ Terminée</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="panel" style={{ marginBottom: 14 }}>
+          <h3>Veille — repos & modèles à la mode</h3>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+            <button
+              className="primary"
+              disabled={veilleEnCours}
+              onClick={() => void lancerVeille()}
+            >
+              {veilleEnCours ? "Veille en cours…" : "Lancer la veille"}
+            </button>
+            {veilleItems.length > 0 && (
+              <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                {veilleItems.length} analyses (GitHub + Hugging Face)
+              </span>
+            )}
+          </div>
+          {veilleItems.length > 0 && (
+            <div style={{ maxHeight: 350, overflowY: "auto" }}>
+              {veilleItems.map((v, i) => (
+                <div key={i} className="model-card" style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>
+                    [{v.source === "github" ? "GitHub" : "Hugging Face"}]{" "}
+                    <a href={v.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>
+                      {v.nom}
+                    </a>
+                    {v.etoiles > 0 && <span className="chip" style={{ marginLeft: 8 }}>⭐ {v.etoiles}</span>}
+                  </div>
+                  {v.resume && (
+                    <div style={{ fontSize: 12, color: "var(--text)", marginTop: 4 }}>{v.resume}</div>
+                  )}
+                  {v.gain && (
+                    <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 4 }}>
+                      Gain pour Néo : {v.gain}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
