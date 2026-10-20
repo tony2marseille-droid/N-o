@@ -127,7 +127,7 @@ async fn status(State(_st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value
 }
 
 fn which_ffmpeg() -> Value {
-    for p in ["C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe", "C:\\ffmpeg\\bin\\ffmpeg.exe"] {
+    for p in ["E:\\ia\\tools\\ffmpeg\\bin\\ffmpeg.exe", "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe"] {
         if std::path::Path::new(p).is_file() { return json!(p); }
     }
     if let Ok(paths) = std::env::var("PATH") {
