@@ -274,14 +274,18 @@ pub async fn chat(
         // Une simple demande d'image ne doit PAS partir dans la chaine 3D lourde.
         let mot_img2d = ["image", "images", "dessin", "illustration", "logo", "affiche",
             "peinture", "poster", "icone", "wallpaper", "croquis",
-            "portrait", "paysage", "photo", "picture"].iter().any(|k| mot(k));
+            "portrait", "paysage", "photo", "picture",
+            "deco", "decoration", "décoration", "png", "jpg", "jpeg",
+            "fond d'ecran", "fond d'écran", "vignette", "banniere", "bannière",
+            "avatar", "sticker", "visuel", "graphique"].iter().any(|k| mot(k));
         let mot_3d = ["3d", "stl", "scad", "mesh", "imprim", "blender",
             "figurine", "objet", "support", "g-code", "gcode", "tranche",
             "texture", "sculpt", "telephone"].iter().any(|k| mot(k));
         // Verbes de creation visuelle ("genere", "dessine", "cree-moi"...).
         let verbe_image = ["genere", "génère", "generer", "générer", "creer",
             "créer", "cree", "crée", "dessine", "dessiner", "illustre",
-            "peins", "peindre", "fais-moi", "fais moi", "montre-moi",
+            "peins", "peindre", "fais-moi", "fais moi", "fait-moi", "fait moi",
+            "fais", "fait", "montre-moi",
             "montre moi", "imagine"].iter().any(|k| mot(k));
         // Domaines NON visuels : ne doivent PAS partir vers l'agent image.
         let non_image = ["code", "script", "fonction", "programme",
@@ -561,6 +565,78 @@ pub async fn chat(
     let msg_force = b.message.clone();
 
     if tool_names.is_empty() {
+        // Modele cloud (Claude/OpenAI/Gemini/...) : reponse via le
+        // fournisseur configure, pas de streaming token par token.
+        if model.starts_with("cloud:") {
+            let cloud_plein = model.clone();
+            let cloud = cloud_plein.strip_prefix("cloud:").unwrap_or("").to_string();
+            let (fid, modecloud) = match cloud.split_once(':') {
+                Some((f, m)) => (f.to_string(), m.to_string()),
+                None => (cloud.clone(), String::new()),
+            };
+            let db2 = st.db.clone();
+            let txc = tx.clone();
+            let model_cloud = model.clone();
+            tokio::spawn(async move {
+                let started = std::time::Instant::now();
+                let Some(f) = localai_core::providers::trouver(&fid) else {
+                    let _ = txc.send(sse_data(json!({
+                        "type": "error", "error": format!("fournisseur inconnu: {fid}")
+                    })));
+                    return;
+                };
+                let cle = db2.get_setting(&format!("provider_{fid}_key"), "");
+                if cle.is_empty() {
+                    let _ = txc.send(sse_data(json!({
+                        "type": "error",
+                        "error": format!("cle absente pour {fid} (Reglages > Fournisseurs)"),
+                    })));
+                    return;
+                }
+                let client = match reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(300))
+                    .build()
+                {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = txc.send(sse_data(json!({ "type": "error", "error": e.to_string() })));
+                        return;
+                    }
+                };
+                match localai_core::providers::chat(
+                    &client, f, &cle, &modecloud, &history, temperature, 2048,
+                ).await {
+                    Ok(reponse) => {
+                        // Reponse en un seul token (le SSE client l'affiche).
+                        let _ = txc.send(sse_data(json!({ "type": "token", "content": reponse.clone() })));
+                        let ms = started.elapsed().as_millis() as i64;
+                        let now2 = now_iso();
+                        let _ = db2.execute(
+                            "INSERT INTO messages (conversation_id, role, content, model, duration_ms, created_at) VALUES (?,?,?,?,?,?)",
+                            &[&cid, &"assistant", &reponse.as_str(), &model_cloud.as_str(), &ms, &now2.as_str()],
+                        );
+                        let _ = db2.execute(
+                            "UPDATE conversations SET updated_at=? WHERE id=?",
+                            &[&now2.as_str(), &cid],
+                        );
+                        let _ = txc.send(sse_data(json!({
+                            "type": "done", "conversation_id": cid, "duration_ms": ms,
+                        })));
+                    }
+                    Err(e) => {
+                        let _ = txc.send(sse_data(json!({ "type": "error", "error": e })));
+                    }
+                }
+            });
+            let flux_cloud = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+            let raw_cloud: std::pin::Pin<
+                Box<dyn futures_util::Stream<Item = Result<Event, Infallible>> + Send>,
+            > = Box::pin(flux_cloud.map(|s| {
+                let payload = s.trim_start_matches("data: ").trim().to_string();
+                Ok::<_, Infallible>(Event::default().data(payload))
+            }));
+            return Ok(Sse::new(raw_cloud).keep_alive(KeepAlive::default()));
+        }
         // Chemin rapide : streaming direct (inchange).
         let db2 = st.db.clone();
         let ollama = st.ollama.clone();
@@ -662,7 +738,9 @@ pub async fn chat(
                     let msg_bas = b.message.to_lowercase();
                     let stylise = ["logo", "cartoon", "dessin", "aquarelle", "pixel",
                         "anime", "manga", "abstrait", "icone", "emoji", "croquis",
-                        "affiche", "bande dessinee", "illustration", "peinture"]
+                        "affiche", "bande dessinee", "illustration", "peinture",
+                        "deco", "decoration", "décoration", "png", "sticker",
+                        "vignette", "banniere", "bannière", "theme"]
                         .iter()
                         .any(|w| {
                             let Some(p) = msg_bas.find(w) else { return false };
@@ -928,9 +1006,11 @@ pub async fn chat(
     }
 
     let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
-    let raw = stream.map(|s| {
+    let raw: std::pin::Pin<
+        Box<dyn futures_util::Stream<Item = Result<Event, Infallible>> + Send>,
+    > = Box::pin(stream.map(|s| {
         let payload = s.trim_start_matches("data: ").trim().to_string();
         Ok::<_, Infallible>(Event::default().data(payload))
-    });
+    }));
     Ok(Sse::new(raw).keep_alive(KeepAlive::default()))
 }

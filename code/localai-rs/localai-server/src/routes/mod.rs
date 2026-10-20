@@ -3,6 +3,7 @@ pub mod chat;
 pub mod comms;
 pub mod connecteurs;
 pub mod conversations;
+pub mod fournisseurs;
 pub mod documents;
 pub mod extras;
 pub mod finetune;

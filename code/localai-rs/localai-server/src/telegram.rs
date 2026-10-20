@@ -41,6 +41,66 @@ async fn envoyer_message(client: &reqwest::Client, token: &str, cid: i64, texte:
         .await;
 }
 
+/// Envoie une image locale sur Telegram : sendPhoto (<= 10 Mo) sinon
+/// sendDocument (jusqu'a 50 Mo, cas des images 4K).
+async fn envoyer_image(client: &reqwest::Client, token: &str, cid: i64, chemin: &str, legende: &str) {
+    let meta = match tokio::fs::metadata(chemin).await {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    let taille = meta.len();
+    if taille == 0 || taille > 50_000_000 {
+        return;
+    }
+    let fichier = match tokio::fs::File::open(chemin).await {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let nom = std::path::Path::new(chemin)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "image.png".into());
+    let legende: String = legende.chars().take(1000).collect();
+    let methode = if taille <= 10_000_000 { "sendPhoto" } else { "sendDocument" };
+    let champ = if taille <= 10_000_000 { "photo" } else { "document" };
+    let partie = reqwest::multipart::Part::stream(fichier)
+        .file_name(nom)
+        .mime_str("image/png")
+        .unwrap_or_else(|_| reqwest::multipart::Part::text(""));
+    let forme = reqwest::multipart::Form::new()
+        .text("chat_id", cid.to_string())
+        .part(champ, partie)
+        .text("caption", legende);
+    let _ = client
+        .post(format!("https://api.telegram.org/bot{token}/{methode}"))
+        .multipart(forme)
+        .send()
+        .await;
+}
+
+/// Extrait les chemins d'images d'un texte de resultat d'outil
+/// (formats : "MEILLEURE IMAGE: <chemin>" et "Image generee: <chemin>").
+fn chemins_images(texte: &str, deja: &mut Vec<String>) {
+    for ligne in texte.lines() {
+        for marqueur in ["MEILLEURE IMAGE: ", "Image generee: "] {
+            if let Some(i) = ligne.find(marqueur) {
+                let reste = ligne[i + marqueur.len()..].trim();
+                let chemin: String = reste
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                let bas = chemin.to_lowercase();
+                if (bas.ends_with(".png") || bas.ends_with(".jpg") || bas.ends_with(".jpeg"))
+                    && !deja.iter().any(|x| x.eq_ignore_ascii_case(&chemin))
+                {
+                    deja.push(chemin);
+                }
+            }
+        }
+    }
+}
+
 /// Reponse via le cerveau LocalAI : POST /api/chat (SSE) consomme ligne par
 /// ligne. Les etapes longues declenchent des messages de progression
 /// Telegram ; les tokens s'agregent en la reponse finale.
@@ -49,14 +109,14 @@ async fn reponse_cerveau(
     modele: &str,
     message: &str,
     telegram: Option<(reqwest::Client, String, i64)>,
-) -> String {
+) -> (String, Vec<(String, String)>) {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(1800))
         .connect_timeout(std::time::Duration::from_secs(10))
         .build();
     let client = match client {
         Ok(c) => c,
-        Err(e) => return format!("Erreur client : {e}"),
+        Err(e) => return (format!("Erreur client : {e}"), Vec::new()),
     };
     let body = serde_json::json!({
         "message": message,
@@ -71,12 +131,13 @@ async fn reponse_cerveau(
         .await;
     let mut stream = match resp {
         Ok(r) if r.status().is_success() => r,
-        Ok(r) => return format!("Erreur cerveau : HTTP {}", r.status()),
-        Err(e) => return format!("Erreur cerveau : {e}"),
+        Ok(r) => return (format!("Erreur cerveau : HTTP {}", r.status()), Vec::new()),
+        Err(e) => return (format!("Erreur cerveau : {e}"), Vec::new()),
     };
     let mut out = String::new();
     let mut buf: Vec<u8> = Vec::new();
     let mut envoyees: Vec<String> = Vec::new();
+    let mut images: Vec<(String, String)> = Vec::new();
     let mut stream_octets = stream.bytes_stream();
     use futures_util::StreamExt;
     while let Some(chunk) = stream_octets.next().await {
@@ -110,6 +171,23 @@ async fn reponse_cerveau(
                         }
                     }
                 }
+                "tool_exec" => {
+                    if let Some(pv) = ev.get("preview").and_then(|x| x.as_str()) {
+                        let mut chemins: Vec<String> = Vec::new();
+                        chemins_images(pv, &mut chemins);
+                        for c in chemins {
+                            // Legende = la ligne d'annonce (chemin + note/fidelite).
+                            let legende = pv
+                                .lines()
+                                .find(|l| l.contains(&c))
+                                .unwrap_or("Image generee")
+                                .chars()
+                                .take(1000)
+                                .collect::<String>();
+                            images.push((c, legende));
+                        }
+                    }
+                }
                 "error" => {
                     out.push_str(&format!(
                         "\n(erreur: {})",
@@ -120,11 +198,19 @@ async fn reponse_cerveau(
             }
         }
     }
-    if out.trim().is_empty() {
-        "(reponse vide)".to_string()
-    } else {
-        out
+    // Secours : le texte final peut aussi mentionner une image (chemin dans
+    // la reponse) sans preview explicite.
+    let mut chemins_bruts: Vec<String> = Vec::new();
+    chemins_images(&out, &mut chemins_bruts);
+    for c in chemins_bruts {
+        if !images.iter().any(|(x, _)| x.eq_ignore_ascii_case(&c)) {
+            images.push((c, "Image generee par Neo".to_string()));
+        }
     }
+    if out.trim().is_empty() {
+        out = "(reponse vide)".to_string();
+    }
+    (out, images)
 }
 
 pub fn maybe_start(st: Arc<AppState>) {
@@ -217,7 +303,7 @@ pub fn maybe_start(st: Arc<AppState>) {
                             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                         }
                     });
-                    let answer = reponse_cerveau(
+                    let (answer, images) = reponse_cerveau(
                         port, &modele2, &t2,
                         Some((client2.clone(), token2.clone(), cid)),
                     ).await;
@@ -226,7 +312,17 @@ pub fn maybe_start(st: Arc<AppState>) {
                     let _ = st2.db.execute(
                         "INSERT INTO messages (conversation_id, role, content, model, created_at) VALUES (?,?,?,?,?)",
                         &[&conv, &"assistant", &answer.as_str(), &modele2.as_str(), &now2.as_str()]);
-                    envoyer_message(&client2, &token2, cid, &answer).await;
+                    // Les images seules (le texte vide n'apporte rien) :
+                    let texte_seul = answer.trim() != "(reponse vide)" && !answer.trim().is_empty();
+                    if texte_seul {
+                        envoyer_message(&client2, &token2, cid, &answer).await;
+                    }
+                    for (chemin, legende) in &images {
+                        envoyer_image(&client2, &token2, cid, chemin, legende).await;
+                    }
+                    if !texte_seul && images.is_empty() {
+                        envoyer_message(&client2, &token2, cid, &answer).await;
+                    }
                 });
             }
         }

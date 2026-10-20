@@ -53,6 +53,11 @@ export default function SettingsView({
   const [connecteurSaisie, setConnecteurSaisie] = useState<Record<string, string>>({});
   const [testsEnCours, setTestsEnCours] = useState<Record<string, boolean>>({});
   const [testResultats, setTestResultats] = useState<Record<string, string>>({});
+  const [fournisseurs, setFournisseurs] = useState<
+    { id: string; nom: string; configue: boolean; modele: string }[]
+  >([]);
+  const [fournisseurSaisie, setFournisseurSaisie] = useState<Record<string, string>>({});
+  const [fournisseurTests, setFournisseurTests] = useState<Record<string, string>>({});
 
   const texte = useCallback((key: string) => t(lang, key), [lang]);
 
@@ -87,6 +92,53 @@ export default function SettingsView({
       .catch(() => undefined);
   }, []);
 
+  const refreshFournisseurs = useCallback(() => {
+    getJSON<{ fournisseurs: { id: string; nom: string; configue: boolean; modele: string }[] }>(
+      "/api/fournisseurs"
+    )
+      .then((d) => setFournisseurs(d.fournisseurs ?? []))
+      .catch(() => undefined);
+  }, []);
+
+  const enregistrerFournisseur = useCallback(
+    async (id: string) => {
+      const cle = (fournisseurSaisie[`${id}_key`] ?? "").trim();
+      const modele = (fournisseurSaisie[`${id}_model`] ?? "").trim();
+      try {
+        await sendJSON("/api/fournisseurs", "POST", {
+          fournisseur: id,
+          cle: cle || undefined,
+          modele: modele || undefined,
+        });
+        toast(cle ? "Clé fournisseur enregistrée" : "Modèle mis à jour", "success");
+        refreshFournisseurs();
+      } catch (err) {
+        toast(`Erreur : ${err}`, "error");
+      }
+    },
+    [fournisseurSaisie, refreshFournisseurs, toast]
+  );
+
+  const testerFournisseur = useCallback(
+    async (id: string) => {
+      setFournisseurTests((r) => ({ ...r, [id]: "test…" }));
+      try {
+        const res = await sendJSON<{ ok: boolean; reponse?: string; detail?: string }>(
+          "/api/fournisseurs/test",
+          "POST",
+          { fournisseur: id }
+        );
+        setFournisseurTests((r) => ({
+          ...r,
+          [id]: res.ok ? `✓ ${res.reponse ?? "OK"}` : `✗ ${res.detail ?? "échec"}`,
+        }));
+      } catch (err) {
+        setFournisseurTests((r) => ({ ...r, [id]: `✗ ${err}` }));
+      }
+    },
+    [toast]
+  );
+
   useEffect(() => {
     getJSON<{ settings: Record<string, string> }>("/api/settings")
       .then((d) => {
@@ -102,7 +154,8 @@ export default function SettingsView({
     refreshMemories();
     refreshFeedback();
     refreshConnecteurs();
-  }, [refreshMemories, refreshFeedback, refreshConnecteurs]);
+    refreshFournisseurs();
+  }, [refreshMemories, refreshFeedback, refreshConnecteurs, refreshFournisseurs]);
 
   const enregistrerConnecteur = useCallback(
     async (service: string, champ: string) => {
@@ -527,6 +580,52 @@ export default function SettingsView({
                 {testResultats.discord}
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Fournisseurs de modeles cloud (cles API) */}
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Fournisseurs de modèles (cloud)</h3>
+          <p style={{ color: "var(--text-dim)", fontSize: 12.5, marginTop: 0 }}>
+            Ajoutez une clé API pour rendre un modèle cloud disponible dans le
+            sélecteur du chat (préfixe ☁). Sans clé, tout reste 100 % local.
+          </p>
+          {fournisseurs.map((f) => (
+            <div key={f.id} className="kv" style={{ display: "block", marginBottom: 12 }}>
+              <span className="k">
+                {f.nom} — {f.configue ? "configuré" : "non configuré"}
+              </span>
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <input
+                  type="password"
+                  placeholder="clé API…"
+                  value={fournisseurSaisie[`${f.id}_key`] ?? ""}
+                  onChange={(e) =>
+                    setFournisseurSaisie((s) => ({ ...s, [`${f.id}_key`]: e.target.value }))
+                  }
+                  style={{ flex: 2 }}
+                />
+                <input
+                  placeholder={f.modele}
+                  value={fournisseurSaisie[`${f.id}_model`] ?? ""}
+                  onChange={(e) =>
+                    setFournisseurSaisie((s) => ({ ...s, [`${f.id}_model`]: e.target.value }))
+                  }
+                  style={{ flex: 1 }}
+                />
+                <button onClick={() => void enregistrerFournisseur(f.id)}>💾</button>
+                <button disabled={!f.configue} onClick={() => void testerFournisseur(f.id)}>
+                  Tester
+                </button>
+              </div>
+              {fournisseurTests[f.id] && (
+                <div style={{ fontSize: 11.5, marginTop: 4 }}>{fournisseurTests[f.id]}</div>
+              )}
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 6 }}>
+            Les clés restent sur ce PC (base locale). Les modèles cloud n'ont pas
+            accès aux outils locaux (chat pur).
           </div>
         </div>
       </div>

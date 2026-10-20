@@ -19,8 +19,9 @@ from backend.tools.common import (_OPENCAD_PATHS, _find_exe,
     _find_vision_model)
 
 
-_TSR_PYTHON = r"E:\ia\.venv\Scripts\python.exe"
-_TSR_RUN = r"E:\ia\tools\TripoSR\run.py"
+_RACINE = os.environ.get("LOCALAI_ROOT", r"E:\ia")
+_TSR_PYTHON = os.environ.get("LOCALAI_VENV_PYTHON", str(Path(_RACINE) / ".venv" / "Scripts" / "python.exe"))
+_TSR_RUN = str(Path(_RACINE) / "tools" / "TripoSR" / "run.py")
 _STL_VIEW_ANGLES = [("face", 68, 0), ("profil", 68, 90), ("dos", 68, 180), ("iso", 68, 315)]
 
 

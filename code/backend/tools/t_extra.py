@@ -102,7 +102,8 @@ def tool_rechercher_fichiers(motif: str, dossier: str = "") -> str:
         return "Erreur: motif vide"
     if "*" not in motif and "?" not in motif:
         motif = f"*{motif}*"
-    racines = [r"E:\ia\workspace", r"E:\ia\data\documents"]
+    racine = os.environ.get("LOCALAI_ROOT", r"E:\ia")
+    racines = [str(Path(racine) / "workspace"), str(Path(racine) / "data" / "documents")]
     if dossier:
         d = Path(dossier)
         if d.is_dir() and ("workspace" in str(d).lower() or "documents" in str(d).lower()):

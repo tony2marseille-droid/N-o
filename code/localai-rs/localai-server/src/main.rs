@@ -15,9 +15,9 @@ use localai_core::{Settings, APP_NAME, APP_VERSION};
 use tower_http::cors::CorsLayer;
 
 use crate::routes::{
-    benchmark, chat, comms, connecteurs, conversations, documents, extras, finetune, health,
-    memory, models, onboarding, outil, sd, security, system, settings, studio, style_collab,
-    tts, voice,
+    benchmark, chat, comms, connecteurs, conversations, documents, extras, finetune, fournisseurs,
+    health, memory, models, onboarding, outil, sd, security, settings, studio, style_collab,
+    system, tts, voice,
 };
 
 #[derive(Clone)]
@@ -80,6 +80,11 @@ async fn main() {
         .allow_methods(tower_http::cors::Any)
         .allow_headers(tower_http::cors::Any);
 
+    // Auth optionnelle : si un token API est defini, les appels /api/*
+    // provenant de l'exterieur (non-loopback) doivent le presenter en
+    // "Authorization: Bearer <token>". Les requetes locales (loopback,
+    // UI auto-hebergee) passent toujours. Route publique : /api/health.
+    let token_api = state.db.get_setting("api_token", "").to_string();
     let mut app: Router = Router::new()
         .merge(health::router())
         .merge(chat::router())
@@ -102,10 +107,15 @@ async fn main() {
         .merge(extras::router())
         .merge(security::router())
         .merge(comms::router())
+        .merge(fournisseurs::router())
         .merge(finetune::router())
         .layer(cors)
         // Images jointes au chat (base64 4K ~10 Mo) : plafond 32 Mo.
         .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
         .with_state(state.clone());
 
     // Frontend statique : dist/ servi, 404 -> index.html (SPA).
@@ -139,15 +149,55 @@ async fn main() {
     tracing::info!("{APP_NAME} {APP_VERSION} (rust) sur {addr}");
     telegram::maybe_start(state.clone());
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("serve");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .expect("serve");
 }
 
 async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
     tracing::info!("arret demande, vidange...");
+}
+
+/// Middleware d'authentification API : les requetes EXTERNES (non-loopback)
+/// vers /api/* doivent presenter le token si celui-ci est defini.
+/// Les requetes locales (UI auto-hebergee) et /api/health passent toujours.
+async fn auth_middleware(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    req: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let chemin = req.uri().path();
+    let local = addr.ip().is_loopback();
+    if local || chemin == "/api/health" || !chemin.starts_with("/api/") {
+        return next.run(req).await;
+    }
+    let token = state.db.get_setting("api_token", "");
+    if token.is_empty() {
+        // Pas de token defini : acces LAN autorise (config actuelle),
+        // mais consigne dans le journal pour sensibilite.
+        return next.run(req).await;
+    }
+    let ok = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim_start_matches("Bearer ").trim() == token)
+        .unwrap_or(false);
+    if ok {
+        return next.run(req).await;
+    }
+    axum::http::Response::builder()
+        .status(axum::http::StatusCode::UNAUTHORIZED)
+        .body(axum::body::Body::from(
+            "{\"error\":\"token API requis (Authorization: Bearer)\"}",
+        ))
+        .unwrap()
 }
 
 /// index.html avec Cache-Control: no-store (anti UI fige apres deploy).

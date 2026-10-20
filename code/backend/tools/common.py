@@ -42,11 +42,12 @@ def _est_sous(chemin: Path, racine: Path) -> bool:
 
 def _sandbox_cfg() -> dict:
     regles = charger_regles()
+    racine = os.environ.get("LOCALAI_ROOT", r"E:\ia")
     return {
-        "root": Path(regles.get("sandbox_root", r"E:\ia\workspace")),
+        "root": Path(regles.get("sandbox_root", str(Path(racine) / "workspace"))),
         "read_roots": [Path(p) for p in regles.get(
             "sandbox_read_roots",
-            [r"E:\ia\workspace", r"E:\ia\data\documents"])],
+            [str(Path(racine) / "workspace"), str(Path(racine) / "data" / "documents")])],
         "cmd_allow": [a.lower() for a in regles.get("cmd_allow", _CMD_ALLOW_DEFAULT)],
         "cmd_deny": [d.lower() for d in regles.get("cmd_deny", _CMD_DENY_DEFAULT)],
         "timeout_s": int(regles.get("timeout_s", 60)),
@@ -101,7 +102,8 @@ html_unescape = _html_unescape
 
 
 _OPENCAD_PATHS = [
-    r"E:\ia\tools\OpenSCAD\openscad-2021.01\openscad.exe",
+    os.environ.get("LOCALAI_OPENCAD", ""),
+    str(Path(os.environ.get("LOCALAI_ROOT", r"E:\ia")) / "tools" / "OpenSCAD" / "openscad-2021.01" / "openscad.exe"),
     r"C:\Program Files\OpenSCAD\openscad.exe",
     r"C:\Program Files (x86)\OpenSCAD\openscad.exe",
 ]

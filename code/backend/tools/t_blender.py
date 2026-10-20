@@ -19,7 +19,8 @@ from backend.tools.common import _find_exe
 
 
 _BLENDER_PATHS = [
-    r"E:\ia\tools\Blender\blender.exe",
+    os.environ.get("LOCALAI_BLENDER", ""),
+    os.environ.get("LOCALAI_ROOT", r"E:\ia") + r"\tools\Blender\blender.exe",
     r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe",
     r"C:\Program Files\Blender Foundation\Blender\blender.exe",
 ]

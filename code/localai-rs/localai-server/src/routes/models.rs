@@ -144,6 +144,36 @@ async fn list_models(State(st): State<Arc<AppState>>) -> ApiResult<Json<Value>> 
             "parameter_size": m.get("details").and_then(|d| d.get("parameter_size")).cloned().unwrap_or(json!("")),
         }));
     }
+    // Modeles cloud : ajoutes si le fournisseur a une cle configuree.
+    for f in localai_core::providers::FOURNISSEURS {
+        let cle = st.db.get_setting(&format!("provider_{}_key", f.id), "");
+        if cle.is_empty() {
+            continue;
+        }
+        let modele = st.db.get_setting(&format!("provider_{}_model", f.id), f.modele_defaut);
+        let tag = format!("cloud:{}:{}", f.id, modele);
+        if seen.contains(&tag) {
+            continue;
+        }
+        models.push(json!({
+            "id": tag,
+            "name": format!("☁ {}", f.nom),
+            "tag": tag,
+            "family": "cloud",
+            "capabilities": ["chat"],
+            "size_label": "cloud",
+            "quantization": "—",
+            "vram_gb": 0.0,
+            "context": 0,
+            "description": format!("Modele cloud via {} (cle API configuree)", f.nom),
+            "source": "cloud",
+            "installed": true,
+            "loaded": false,
+            "runtime": Value::Null,
+            "size_bytes": json!(0),
+            "parameter_size": json!(""),
+        }));
+    }
     models.sort_by(|a, b| {
         let ai = a.get("installed").and_then(|v| v.as_bool()).unwrap_or(false);
         let bi = b.get("installed").and_then(|v| v.as_bool()).unwrap_or(false);
