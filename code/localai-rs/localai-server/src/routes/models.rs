@@ -125,6 +125,10 @@ async fn list_models(State(st): State<Arc<AppState>>) -> ApiResult<Json<Value>> 
             if seen.contains(&tag) {
                 continue;
         }
+        let base = tag.split(':').next().unwrap_or("").to_string();
+        if base.starts_with("localai-prog") || base.starts_with("localai-v") {
+            continue;
+        }
         models.push(json!({
             "id": tag, "name": tag.split(':').next().unwrap_or(&tag),
             "tag": tag,

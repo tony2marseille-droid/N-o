@@ -91,6 +91,7 @@ export interface DocumentItem {
   size_bytes: number;
   chunk_count: number;
   created_at: string;
+  category?: string | null;
 }
 
 export interface SearchResult {

@@ -25,7 +25,7 @@ MODEL_PLANS: dict[str, dict[str, list[str]]] = {
     },
     "T2": {
         "agent_brain": ["qwen3:14b", "deepseek-r1:8b", "qwen2.5:14b", "mistral-small"],
-            "coder": ["localai-prog-v4:latest", "localai-prog-v3:latest", "qwen2.5-coder:14b"],
+            "coder": ["localai-prog-latest:latest", "localai-prog-v9.2-q5km:latest", "qwen2.5-coder:14b"],
         "vision": ["qwen2.5vl:7b", "llama3.2-vision:11b"],
         "teacher": ["qwen3:14b", "qwen3:30b"],
         "student": ["qwen3:8b", "qwen3:4b"],

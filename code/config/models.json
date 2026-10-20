@@ -1,0 +1,222 @@
+{
+    "$schema":  "localai-models-catalog",
+    "version":  1,
+    "models":  [
+                   {
+                       "id":  "qwen3-8b",
+                       "name":  "Qwen 3",
+                       "tag":  "qwen3:8b",
+                       "family":  "qwen",
+                       "capabilities":  [
+                                            "general",
+                                            "raisonnement",
+                                            "outils"
+                                        ],
+                       "size_label":  "8B",
+                       "quantization":  "Q4_K_M",
+                       "vram_gb":  5.2,
+                       "context":  40960,
+                       "description":  "Modèle général polyvalent, excellent équilibre qualité/vitesse. Hybride thinking/non-thinking."
+                   },
+                    {
+                        "id":  "localai-prog-latest",
+                        "name":  "LocalAI Pro (v9.2 · Q8)",
+                        "tag":  "localai-prog-latest:latest",
+                        "family":  "qwen",
+                        "capabilities":  [
+                                             "coding",
+                                             "general",
+                                             "raisonnement"
+                                         ],
+                        "size_label":  "8B",
+                        "quantization":  "Q8_0",
+                        "vram_gb":  8.7,
+                        "context":  8192,
+                        "description":  "Qwen3-8B fine-tuné maison v9.2 (corpus SFT+RLVR, LoRA R16). L'alias suit toujours la dernière version promue — champion qualité."
+                    },
+                    {
+                        "id":  "localai-prog-v9.2-q5km",
+                        "name":  "LocalAI Pro (v9.2 · Q5 rapide)",
+                        "tag":  "localai-prog-v9.2-q5km:latest",
+                        "family":  "qwen",
+                        "capabilities":  [
+                                             "coding",
+                                             "general",
+                                             "raisonnement"
+                                         ],
+                        "size_label":  "8B",
+                        "quantization":  "Q5_K_M",
+                        "vram_gb":  6.7,
+                        "context":  8192,
+                        "description":  "Le même fine-tuné v9.2 quantisé Q5_K_M : ~30 t/s sur RTX 3080, modèle par défaut du chat (routeur rapide)."
+                    },
+                   {
+                       "id":  "qwen25-coder-7b",
+                       "name":  "Qwen 2.5 Coder",
+                       "tag":  "qwen2.5-coder:7b",
+                       "family":  "qwen",
+                       "capabilities":  [
+                                            "coding"
+                                        ],
+                       "size_label":  "7B",
+                       "quantization":  "Q4_K_M",
+                       "vram_gb":  4.7,
+                       "context":  32768,
+                       "description":  "Spécialiste code rapide : complétion, refactoring, scripts."
+                   },
+                   {
+                       "id":  "qwen25-coder-14b",
+                       "name":  "Qwen 2.5 Coder 14B",
+                       "tag":  "qwen2.5-coder:14b",
+                       "family":  "qwen",
+                       "capabilities":  [
+                                            "coding",
+                                            "raisonnement"
+                                        ],
+                       "size_label":  "14B",
+                       "quantization":  "Q4_K_M",
+                       "vram_gb":  9.0,
+                       "context":  32768,
+                       "description":  "Coder haute capacité. Serré sur 10 Go VRAM mais tourne."
+                   },
+                   {
+                       "id":  "gemma3-4b",
+                       "name":  "Gemma 3",
+                       "tag":  "gemma3:4b",
+                       "family":  "gemma",
+                       "capabilities":  [
+                                            "general",
+                                            "rapide",
+                                            "vision"
+                                        ],
+                       "size_label":  "4B",
+                       "quantization":  "Q4_K_M",
+                       "vram_gb":  3.3,
+                       "context":  131072,
+                       "description":  "Modèle léger et rapide, multimodal (images), très grand contexte."
+                   },
+                   {
+                       "id":  "llama31-8b",
+                       "name":  "Llama 3.1",
+                       "tag":  "llama3.1:8b",
+                       "family":  "llama",
+                       "capabilities":  [
+                                            "general",
+                                            "outils"
+                                        ],
+                       "size_label":  "8B",
+                       "quantization":  "Q4_K_M",
+                       "vram_gb":  4.9,
+                       "context":  131072,
+                       "description":  "Valeur sûre multi-usages de Meta, bon en tool calling."
+                   },
+                   {
+                       "id":  "deepseek-r1-8b",
+                       "name":  "DeepSeek R1",
+                       "tag":  "deepseek-r1:8b",
+                       "family":  "deepseek",
+                       "capabilities":  [
+                                            "raisonnement",
+                                            "maths"
+                                        ],
+                       "size_label":  "8B",
+                       "quantization":  "Q4_K_M",
+                       "vram_gb":  5.2,
+                       "context":  131072,
+                       "description":  "Raisonnement chaîné (chain-of-thought) distillé, fort en maths et logique."
+                   },
+                   {
+                       "id":  "mistral-7b",
+                       "name":  "Mistral",
+                       "tag":  "mistral:7b",
+                       "family":  "mistral",
+                       "capabilities":  [
+                                            "general",
+                                            "rapide"
+                                        ],
+                       "size_label":  "7B",
+                       "quantization":  "Q4_K_M",
+                       "vram_gb":  4.1,
+                       "context":  32768,
+                       "description":  "Modèle européen efficace, très bon en français."
+                   },
+                   {
+                       "id":  "nomic-embed",
+                       "name":  "Nomic Embed",
+                       "tag":  "nomic-embed-text:latest",
+                       "family":  "nomic",
+                       "capabilities":  [
+                                            "embeddings"
+                                        ],
+                       "size_label":  "137M",
+                       "quantization":  "F16",
+                       "vram_gb":  0.5,
+                       "context":  8192,
+                       "description":  "Modèle d\u0027embeddings pour le RAG (recherche documentaire)."
+                   },
+                   {
+                       "id":  "qwen25vl-7b",
+                       "name":  "Qwen 2.5 VL",
+                       "tag":  "qwen2.5vl:7b",
+                       "family":  "qwen2vl",
+                       "capabilities":  [
+                                            "vision",
+                                            "general"
+                                        ],
+                       "size_label":  "7B",
+                       "quantization":  "Q4_K_M",
+                       "vram_gb":  5.5,
+                       "context":  32768,
+                       "description":  "Vision : analyse d images, documents scans, captures d ecran."
+                   },
+                   {
+                       "id":  "llava-7b",
+                       "name":  "LLaVA",
+                       "tag":  "llava:7b",
+                       "family":  "llava",
+                       "capabilities":  [
+                                            "vision"
+                                        ],
+                       "size_label":  "7B",
+                       "quantization":  "Q4_0",
+                       "vram_gb":  4.7,
+                       "context":  32768,
+                       "description":  "Vision leger et eprouve : description et questions sur images."
+                   },
+                   {
+                       "id":  "gemma3-12b",
+                       "name":  "Gemma 3 12B",
+                       "tag":  "gemma3:12b",
+                       "family":  "gemma3",
+                       "capabilities":  [
+                                            "general",
+                                            "raisonnement",
+                                            "vision",
+                                            "connaissance"
+                                        ],
+                       "size_label":  "12B",
+                       "quantization":  "Q4_K_M",
+                       "vram_gb":  8.5,
+                       "context":  131072,
+                       "description":  "Connaissance generale etendue, multimodal. Recommande pour culture generale et documents."
+                   },
+                   {
+                       "id":  "qwen3-14b",
+                       "name":  "Qwen 3 14B",
+                       "tag":  "qwen3:14b",
+                       "family":  "qwen3",
+                       "capabilities":  [
+                                            "general",
+                                            "raisonnement",
+                                            "outils",
+                                            "coding",
+                                            "connaissance"
+                                        ],
+                       "size_label":  "14B",
+                       "quantization":  "Q4_K_M",
+                       "vram_gb":  9,
+                       "context":  40960,
+                       "description":  "Le plus competent \u003c10 Go : raisonnement profond et large savoir."
+                   }
+               ]
+}

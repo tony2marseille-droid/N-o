@@ -27,6 +27,11 @@ foreach ($f in Get-ChildItem 'E:\localai-rs' -Filter 'rust-toolchain*') { Copy-I
 # --- Backend Python (sans caches) ---
 Sync 'E:\ia\backend' "$EXPORT\code\backend" @('__pycache__', '*.pyc')
 
+# --- Catalogue de modeles (config) ---
+if (Test-Path 'E:\ia\config') {
+    Sync 'E:\ia\config' "$EXPORT\code\config" @('__pycache__')
+}
+
 # --- Frontend (src + config, sans node_modules/dist) ---
 Sync 'E:\ia\frontend\src' "$EXPORT\code\frontend\src" @('__pycache__')
 foreach ($f in @('package.json', 'vite.config.ts', 'tsconfig.json', 'index.html')) {

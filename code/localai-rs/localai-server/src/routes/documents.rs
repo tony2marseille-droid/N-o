@@ -16,18 +16,210 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/api/documents", get(list))
         .route("/api/documents/upload", post(upload))
         .route("/api/documents/search", post(search))
+        .route("/api/documents/fiches", get(fiches))
+        .route("/api/documents/classify", post(classify))
         .route("/api/documents/:id", delete(remove))
 }
 
 const MAX_FILE_SIZE: usize = 30 * 1024 * 1024;
 const EMBED_MODEL: &str = "nomic-embed-text:latest";
 
+const CATEGORIES: &[&str] = &[
+    "programmation", "ia", "impression3d", "bricolage",
+    "cuisine", "sante", "finances", "loisirs", "science", "autre",
+];
+
+static CATEGORY_OK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn ensure_category(st: &Arc<crate::AppState>) {
+    if CATEGORY_OK.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let _ = st.db.execute("ALTER TABLE documents ADD COLUMN category TEXT DEFAULT ''", &[]);
+    CATEGORY_OK.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+async fn classify_text(st: &Arc<crate::AppState>, filename: &str, excerpt: &str) -> String {
+    let model = st.db.get_setting("model_rapide", "qwen3:8b").to_string();
+    let prompt = format!(
+        "Classe ce document dans exactement une de ces categories : {}. \
+Reponds UNIQUEMENT le nom de la categorie, un seul mot, sans ponctuation, sans phrase.\n\
+Nom du fichier : {}\nDebut du contenu :\n{}",
+        CATEGORIES.join(", "), filename, excerpt
+    );
+    let rep = match st
+        .ollama
+        .chat(
+            &model,
+            vec![localai_core::ollama::Msg { role: "user".into(), content: prompt }],
+            0.0,
+            12,
+        )
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return "autre".into(),
+    };
+    let low = rep.to_lowercase();
+    CATEGORIES
+        .iter()
+        .filter(|c| low.contains(**c))
+        .max_by_key(|c| c.len())
+        .map(|c| (*c).to_string())
+        .unwrap_or_else(|| "autre".into())
+}
+
+fn illustration_prompt(cat: &str) -> String {
+    let sujet = match cat {
+        "programmation" => "code brackets and a terminal cursor",
+        "ia" => "a brain made of connected glowing nodes",
+        "impression3d" => "a 3d printer printing a small object, layer by layer",
+        "bricolage" => "a hammer and a screwdriver crossed",
+        "cuisine" => "a cooking pot with rising steam",
+        "sante" => "a heart with a pulse line",
+        "finances" => "stacked coins and a rising chart",
+        "loisirs" => "an open book and a game controller",
+        "science" => "an atom and a laboratory flask",
+        _ => "a folder full of documents",
+    };
+    format!(
+        "minimalist flat vector icon of {sujet}, dark background, subtle green \
+accent, clean simple shapes, no text, centered composition"
+    )
+}
+
+static ILLUSTRATION_RUNNING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn spawn_illustrations(st: &Arc<crate::AppState>, missing: Vec<String>) {
+    if ILLUSTRATION_RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let root = st.settings.root_dir.clone();
+    let dir = st.settings.data_dir.join("fiches");
+    tokio::spawn(async move {
+        for cat in missing {
+            let png = dir.join(format!("fiche_{cat}.png"));
+            let jpg = dir.join(format!("fiche_{cat}.jpg"));
+            if jpg.is_file() {
+                continue;
+            }
+            let prompt = illustration_prompt(&cat).replace('\'', "");
+            let out = png.to_string_lossy().replace('\'', "");
+            let jpeg = jpg.to_string_lossy().replace('\'', "");
+            let code = format!(
+                "from backend.core.sdgen import generer; import os, json; \
+from PIL import Image; m = generer('{}', r'{}', '', 512, 512, 4, -1); \
+ok = os.path.exists(r'{}'); \
+im = Image.open(r'{}').convert('RGB') if ok else None; \
+im.save(r'{}', 'JPEG', quality=85, optimize=True) if im else None; \
+os.remove(r'{}') if ok else None; \
+print(json.dumps({{'ok': os.path.exists(r'{}')}}))",
+                prompt, out, out, out, jpeg, out, jpeg
+            );
+            let _ = crate::pybridge::py_json_timeout(
+                &root,
+                &code,
+                std::time::Duration::from_secs(900),
+            )
+            .await;
+        }
+        ILLUSTRATION_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    });
+}
+
 async fn list(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {
+    ensure_category(&st);
     let rows = st.db.query_all_json(
-        "SELECT id, filename, size_bytes, chunk_count, created_at FROM documents ORDER BY id DESC",
+        "SELECT id, filename, size_bytes, chunk_count, created_at, category FROM documents ORDER BY id DESC",
         &[],
     )?;
     Ok(Json(json!({ "documents": rows })))
+}
+
+async fn fiches(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {
+    ensure_category(&st);
+    let dir = st.settings.data_dir.join("fiches");
+    let _ = std::fs::create_dir_all(&dir);
+    let rows = st.db.query_all_json(
+        "SELECT category, COUNT(*) AS n FROM documents GROUP BY category",
+        &[],
+    )?;
+    let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    let mut non_classes: i64 = 0;
+    for r in rows {
+        let c = r.get("category").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let n = r.get("n").and_then(|v| v.as_i64()).unwrap_or(0);
+        if c.is_empty() {
+            non_classes = n;
+        } else {
+            counts.insert(c, n);
+        }
+    }
+    let mut fiches: Vec<Value> = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
+    for c in CATEGORIES {
+        let has = dir.join(format!("fiche_{c}.jpg")).is_file();
+        if !has {
+            missing.push((*c).to_string());
+        }
+        fiches.push(json!({
+            "category": c,
+            "count": counts.get(*c).copied().unwrap_or(0),
+            "illustration": has,
+        }));
+    }
+    if !missing.is_empty() {
+        spawn_illustrations(&st, missing);
+    }
+    Ok(Json(json!({ "fiches": fiches, "non_classes": non_classes })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClassifyBody {
+    pub limit: Option<i64>,
+}
+
+async fn classify(
+    State(st): State<Arc<crate::AppState>>,
+    Json(b): Json<ClassifyBody>,
+) -> ApiResult<Json<Value>> {
+    ensure_category(&st);
+    let limit = b.limit.unwrap_or(8).clamp(1, 20);
+    let rows = st.db.query_all_json(
+        "SELECT id, filename FROM documents WHERE category IS NULL OR category='' ORDER BY id LIMIT ?",
+        &[&limit],
+    )?;
+    let mut done = 0;
+    for r in rows {
+        let id = r.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+        let filename = r.get("filename").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let chunks = st.db.query_all_json(
+            "SELECT content FROM document_chunks WHERE document_id=? ORDER BY position LIMIT 1",
+            &[&id],
+        )?;
+        let excerpt: String = chunks
+            .first()
+            .and_then(|c| c.get("content"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .chars()
+            .take(400)
+            .collect();
+        let cat = classify_text(&st, &filename, &excerpt).await;
+        let _ = st.db.execute("UPDATE documents SET category=? WHERE id=?", &[&cat.as_str(), &id]);
+        done += 1;
+    }
+    let rem = st.db.query_all_json(
+        "SELECT COUNT(*) AS n FROM documents WHERE category IS NULL OR category=''",
+        &[],
+    )?;
+    let remaining = rem
+        .first()
+        .and_then(|r| r.get("n"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    Ok(Json(json!({ "classified": done, "remaining": remaining })))
 }
 
 fn unpack_f32le(blob: &[u8]) -> Vec<f32> {
@@ -182,7 +374,11 @@ async fn upload(
         let final_path = upload_dir.join(format!("doc_{doc_id}{suffix}"));
         std::fs::write(&final_path, &raw)
             .map_err(|e| ApiError(localai_core::AppError::Internal(e.to_string())))?;
-        return Ok(Json(json!({ "id": doc_id, "filename": filename, "chunks": chunks.len() })));
+        ensure_category(&st);
+        let excerpt: String = text.chars().take(400).collect();
+        let cat = classify_text(&st, &filename, &excerpt).await;
+        let _ = st.db.execute("UPDATE documents SET category=? WHERE id=?", &[&cat.as_str(), &doc_id]);
+        return Ok(Json(json!({ "id": doc_id, "filename": filename, "chunks": chunks.len(), "category": cat })));
     }
     Err(ApiError(localai_core::AppError::BadRequest("aucun fichier".into())))
 }
