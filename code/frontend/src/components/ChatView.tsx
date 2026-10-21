@@ -8,6 +8,7 @@ import type {
 import { getJSON, postVoiceSSE, streamSSE } from "../lib/api";
 import PipelinePanel, { type PipelineStep } from "./PipelinePanel";
 import MatrixRain from "./MatrixRain";
+import { useImageAttach, buildChatBody } from "./useImageAttach";
 
 interface Props {
   models: ModelEntry[];
@@ -106,15 +107,13 @@ export default function ChatView({
   const [toolsEnabled, setToolsEnabled] = useState(false);
   const [ragEnabled, setRagEnabled] = useState(false);
   const [webEnabled, setWebEnabled] = useState(false);
-  const [pendingImages, setPendingImages] = useState<{ name: string; base64: string }[]>([]);
+  const { images: pendingImages, dragging, attachFiles, remove, clear, dragProps } = useImageAttach();
   const [prompts, setPrompts] = useState<{ id: number; name: string; content: string }[]>([]);
   const [autoTts, setAutoTts] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
-  const [dragActive, setDragActive] = useState(false);
   const chunksRef = useRef<Blob[]>([]);
   const [recording, setRecording] = useState(false);
   // Pipeline live : agent/modele/ETA + etapes d'outils (panneau Matrix).
@@ -138,39 +137,7 @@ export default function ChatView({
     });
   }, []);
 
-  const attachFiles = useCallback((files: FileList | null) => {
-    if (!files) return;
-    for (const file of Array.from(files).slice(0, 4)) {
-      if (!file.type.startsWith("image/")) continue;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const full = String(reader.result ?? "");
-        const base64 = full.split(",")[1] ?? "";
-        if (base64) setPendingImages((prev) => [...prev.slice(-3), { name: file.name, base64 }]);
-      };
-      reader.readAsDataURL(file);
-    }
-  }, []);
-
-  const onDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragActive(true);
-  }, []);
-
-  const onDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragActive(false);
-  }, []);
-
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragActive(false);
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      attachFiles(files);
-      toast(`${files.length} image${files.length > 1 ? "s" : ""} ajoutée${files.length > 1 ? "s" : ""} (glisser-déposer)`, "info");
-    }
-  }, [attachFiles, toast]);
+  // Gestion des images (drop, trombone, collage) via le hook useImageAttach
 
   useEffect(() => {
     getJSON<{ agents: AgentDef[] }>("/api/agents")
@@ -260,11 +227,11 @@ export default function ChatView({
 
   const send = useCallback(async (overrideText?: string, isRegenerate = false) => {
     const text = (overrideText ?? input).trim();
-    const images = pendingImages.map((p) => p.base64);
+    const images = pendingImages.map((p) => p.preview);
     if ((!text && images.length === 0 && !isRegenerate) || streaming) return;
     if (!isRegenerate) {
       setInput("");
-      setPendingImages([]);
+      clear();
     } else {
       setMessages((prev) => {
         const copy = [...prev];
@@ -273,10 +240,11 @@ export default function ChatView({
       });
     }
     setStreaming(true);
-    setImagesInFlight(images.length);
+    setImagesInFlight(pendingImages.length);
+    clear();
     const assistantMsg: DisplayMessage = { role: "assistant", content: "", tools: [] };
     if (!isRegenerate) {
-      setMessages((prev) => [...prev, { role: "user", content: text + (images.length ? ` [${images.length} image${images.length > 1 ? "s" : ""}]` : "") }, assistantMsg]);
+      setMessages((prev) => [...prev, { role: "user", content: text + (pendingImages.length ? ` [${pendingImages.length} image${pendingImages.length > 1 ? "s" : ""}]` : "") }, assistantMsg]);
     } else {
       setMessages((prev) => [...prev, assistantMsg]);
     }
@@ -299,17 +267,16 @@ export default function ChatView({
       let convId = conversationId;
       await streamSSE(
         "/api/chat",
-        {
+        buildChatBody(text, pendingImages, {
           conversation_id: convId,
           model: selectedModel || "auto",
-          message: text || "Décris cette image.",
           temperature: 0.5,
-          agent_id: agentId === "general" ? null : agentId,          tools_enabled: toolsEnabled,
+          agent_id: agentId === "general" ? null : agentId,
+          tools_enabled: toolsEnabled,
           rag_enabled: ragEnabled,
           web_enabled: webEnabled,
-          images,
           regenerate: isRegenerate,
-        },
+        }),
         (event) => {
           if (event.type === "meta") {
             const id = event.conversation_id as number;
@@ -595,12 +562,10 @@ export default function ChatView({
 
   return (
       <div
-        className={`chat-container ${dragActive ? "drag-active" : ""}`}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
+        className={`chat-container ${dragging ? "drag-active" : ""}`}
+        {...dragProps}
       >
-        {dragActive && (
+        {dragging && (
           <div className="drop-overlay">
             <span>📎 Déposez vos images ici</span>
           </div>
@@ -788,16 +753,15 @@ export default function ChatView({
       <div className="chat-input-zone">
         {pendingImages.length > 0 && (
           <div className="image-previews">
-            {pendingImages.map((p, i) => (
-              <div key={i} className="image-thumb">
-                <img src={`data:image/jpeg;base64,${p.base64}`} alt={p.name} />
-                <button title="Retirer" onClick={() => setPendingImages((prev) => prev.filter((_, j) => j !== i))}>×</button>
+            {pendingImages.map((p) => (
+              <div key={p.id} className="image-thumb">
+                <img src={`data:image/jpeg;base64,${p.preview}`} alt={p.name} />
+                <button title="Retirer" onClick={() => remove(p.id)}>×</button>
               </div>
             ))}
           </div>
         )}
         <input
-          ref={fileRef}
           type="file"
           accept="image/*"
           multiple
@@ -811,7 +775,10 @@ export default function ChatView({
           className="icon-btn"
           title="Joindre une image (vision)"
           disabled={streaming}
-          onClick={() => fileRef.current?.click()}
+          onClick={() => {
+            const el = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+            el?.click();
+          }}
         >
           📎
         </button>
@@ -838,16 +805,7 @@ export default function ChatView({
               void send();
             }
           }}
-          onPaste={(e) => {
-            const items = Array.from(e.clipboardData?.items ?? []);
-            const imgs = items.filter((it) => it.type.startsWith("image/"));
-            if (imgs.length > 0) {
-              e.preventDefault();
-              const dt = new DataTransfer();
-              imgs.forEach((it) => dt.items.add(it.getAsFile() as File));
-              attachFiles(dt.files);
-            }
-          }}
+          onPaste={dragProps.onPaste}
           rows={2}
         />
         <button className="primary" style={{ height: 46 }} disabled={streaming || (!input.trim() && pendingImages.length === 0)} onClick={() => void send()}>

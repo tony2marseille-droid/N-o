@@ -19,8 +19,10 @@ use tokio::sync::mpsc;
 use crate::tools;
 use crate::AppState;
 
+mod vision;
+
 pub fn router() -> Router<Arc<AppState>> {
-    Router::new().route("/api/chat", post(chat))
+    Router::new().route("/api/chat", post(chat)).layer(vision::body_limit())
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -250,6 +252,12 @@ pub async fn chat(
         if !parts.is_empty() {
             history.insert(0, Msg { role: "system".into(), content: parts.join("\n\n") });
         }
+
+    // Injection des images jointes dans le dernier message user + prompt système vision.
+    // Ollama attend du base64 BRUT (sans préfixe data:) ; attach_images sanitise.
+    let n_images = vision::attach_images(&mut history, &b.images.clone().unwrap_or_default());
+    if n_images > 0 {
+        model = vision::VISION_MODEL.to_string();
     }
 
     let (tx, rx) = mpsc::unbounded_channel::<String>();
@@ -266,7 +274,7 @@ pub async fn chat(
         let ollama = st.ollama.clone();
         let model2 = model.clone();
         let body = serde_json::json!({
-            "messages": messages_json(&history, &b.images),
+            "messages": messages_json(&history, &[]),
             "think": false,
             "options": {
                 "temperature": temperature,
@@ -312,24 +320,21 @@ pub async fn chat(
         let root = st.settings.root_dir.clone();
         let model2 = model.clone();
         let level = tools::tool_level(&st.db);
-        let images2 = b.images.clone();
         tokio::spawn(async move {
             let started = std::time::Instant::now();
             // Le modèle vision (qwen2.5vl:7b) ne supporte pas les outils natifs Ollama.
-        // Si des images sont jointes, on désactive les outils pour cet appel
-        // afin d'éviter le 500 "does not support tools". L'agent pourra décrire
-        // l'image ; les outils restent disponibles sur les requêtes sans image.
-        let specs = if images2.as_ref().map_or(false, |v| !v.is_empty()) {
-            tools::specs(&root, &tool_names).await.unwrap_or_default()
-        } else {
-            Vec::new()
-        };
+            // Si des images sont jointes, on désactive les outils pour cet appel.
+            let specs = if n_images > 0 {
+                Vec::new()
+            } else {
+                tools::specs(&root, &tool_names).await.unwrap_or_default()
+            };
             let mut messages = history;
             let mut full = String::new();
             let mut tool_pos: Vec<(usize, String, usize)> = Vec::new();
             let seuil = NUM_CTX * 8 / 10;
             for round in 0..tools::MAX_TOOL_ROUNDS {
-                let payload = messages_json(&messages, &images2);
+                let payload = messages_json(&messages, &[]);
                 let (text, calls) = match ollama
                     .chat_tools(&model2, payload, &specs, temperature, 2048)
                     .await
