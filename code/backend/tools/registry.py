@@ -643,6 +643,35 @@ TOOL_DEFINITIONS: dict[str, dict] = {
             str(args.get("texture", "")),
         ),
     },
+    "pipeline_3d": {
+        "level": "POWER",
+        "description": (
+            "PIPELINE 3D COMPLET : transforme une demande en langage naturel en pièce "
+            "3D imprimable (STL). Étapes : spec JSON paramétrique → script OpenSCAD "
+            "généré par LLM → rendu headless → contrôles auto (watertight, dimensions) "
+            "→ rendu 4 vues → contrôle qualité par modèle vision. Retourne le chemin du "
+            "STL final et le rapport de contrôle. Utiliser pour toute demande de création "
+            "d'objet 3D mécanique ou fonctionnel."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "request_text": {
+                    "type": "string",
+                    "description": "Demande de conception 3D en langage naturel "
+                                   "(ex: 'un support de téléphone avec fente 8mm').",
+                },
+                "save_dir": {
+                    "type": "string",
+                    "description": "Dossier de sortie optionnel (défaut : workspace/pipeline_3d/<date>).",
+                },
+            },
+            "required": ["request_text"],
+        },
+        "function": lambda args: __import__("backend.tools.t_pipeline_3d", fromlist=["pipeline_3d"]).pipeline_3d(
+            args["request_text"], args.get("save_dir", "")
+        ),
+    },
 }
 
 
