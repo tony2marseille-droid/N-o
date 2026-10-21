@@ -114,6 +114,7 @@ export default function ChatView({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const chunksRef = useRef<Blob[]>([]);
   const [recording, setRecording] = useState(false);
   // Pipeline live : agent/modele/ETA + etapes d'outils (panneau Matrix).
@@ -149,6 +150,26 @@ export default function ChatView({
       reader.readAsDataURL(file);
     }
   }, []);
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(true);
+  }, []);
+
+  const onDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+  }, []);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      attachFiles(files);
+      toast(`${files.length} image${files.length > 1 ? "s" : ""} ajoutée${files.length > 1 ? "s" : ""} (glisser-déposer)`, "info");
+    }
+  }, [attachFiles, toast]);
 
   useEffect(() => {
     getJSON<{ agents: AgentDef[] }>("/api/agents")
@@ -570,9 +591,19 @@ export default function ChatView({
   );
 
   return (
-    <div className="chat-container">
-      {/* Fond dynamique Matrix (derriere les messages, discret). */}
-      <MatrixRain background />
+      <div
+        className={`chat-container ${dragActive ? "drag-active" : ""}`}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
+        {dragActive && (
+          <div className="drop-overlay">
+            <span>📎 Déposez vos images ici</span>
+          </div>
+        )}
+        {/* Fond dynamique Matrix (derriere les messages, discret). */}
+        <MatrixRain background />
       <div className="view-header">
         <h2>Conversation</h2>
         <select
