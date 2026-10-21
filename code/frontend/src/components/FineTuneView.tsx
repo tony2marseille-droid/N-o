@@ -199,8 +199,24 @@ interface ImportStatus {
       if (trainPollRef.current) clearInterval(trainPollRef.current);
       if (convertPollRef.current) clearInterval(convertPollRef.current);
       if (importPollRef.current) clearInterval(importPollRef.current);
+      if (conseilPollRef.current) clearInterval(conseilPollRef.current);
     };
   }, [refreshStatus, refreshExamples, refreshTrainStatus, startConvertPoll, startImportPoll]);
+
+  const conseilPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    const enCours = conseilIdees.some((i) => i.statut === "en_cours");
+    if (!enCours) return;
+    conseilPollRef.current = setInterval(() => {
+      getJSON<{ idees: typeof conseilIdees }>("/api/conseil/idees")
+        .then((r) => setConseilIdees(r.idees ?? []))
+        .catch(() => undefined);
+    }, 15000);
+    return () => {
+      if (conseilPollRef.current) clearInterval(conseilPollRef.current);
+      conseilPollRef.current = null;
+    };
+  }, [conseilIdees]);
 
   const addExample = useCallback(async () => {
     if (!newUserMsg.trim() || !newAssistantMsg.trim()) return;
@@ -686,7 +702,7 @@ interface ImportStatus {
                     <span className="chip">gain {idee.gain}/5</span>
                     <span className="chip">{idee.statut}</span>
                   </div>
-                  {(idee.statut === "proposee" || idee.statut === "rejetee") && (
+                  {(idee.statut === "proposee" || idee.statut === "rejetee" || idee.statut === "echec") && (
                     <button
                       className="primary"
                       style={{ padding: "4px 14px", fontSize: 12 }}
@@ -700,6 +716,9 @@ interface ImportStatus {
                   )}
                   {idee.statut === "terminee" && (
                     <span style={{ fontSize: 12, color: "var(--green)" }}>✓ Terminée</span>
+                  )}
+                  {idee.statut === "echec" && (
+                    <span style={{ fontSize: 12, color: "var(--red)" }}>✗ Échec — relançable</span>
                   )}
                 </div>
               ))}

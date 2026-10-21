@@ -93,6 +93,9 @@ async fn etat(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> 
         .unwrap_or(json!({}));
     let pid = meta.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
     let running = pid > 0 && pid_alive(pid).await;
+    if !running {
+        CONSEIL_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
     let nb = idees(&st).len();
     Ok(Json(json!({ "running": running, "idees": nb })))
 }

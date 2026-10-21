@@ -87,6 +87,9 @@ async fn etat(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> 
         .unwrap_or(json!({}));
     let pid = meta.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
     let running = pid > 0 && pid_alive(pid).await;
+    if !running {
+        VEILLE_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
     let nb = dernier_fichier(&st)
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|t| t.lines().filter(|l| !l.trim().is_empty()).count())
