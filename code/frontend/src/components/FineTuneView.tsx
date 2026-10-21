@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { getJSON, sendJSON } from "../lib/api";
 
 interface Props {
@@ -692,7 +692,7 @@ interface ImportStatus {
                       style={{ padding: "4px 14px", fontSize: 12 }}
                       onClick={() => void lancerIdee(idee.id)}
                     >
-                      Lancer cette amélioration
+                      Mettre en application
                     </button>
                   )}
                   {idee.statut === "en_cours" && (
@@ -752,3 +752,4 @@ interface ImportStatus {
     </>
   );
 }
+
