@@ -120,6 +120,7 @@ export default function ChatView({
   // Pipeline live : agent/modele/ETA + etapes d'outils (panneau Matrix).
   const [pipeline, setPipeline] = useState<{ agent: string; model: string; etaMs: number | null } | null>(null);
   const [steps, setSteps] = useState<PipelineStep[]>([]);
+  const [imagesInFlight, setImagesInFlight] = useState(0);
   const bufRef = useRef("");
   const flushRef = useRef<number | null>(null);
 
@@ -272,6 +273,7 @@ export default function ChatView({
       });
     }
     setStreaming(true);
+    setImagesInFlight(images.length);
     const assistantMsg: DisplayMessage = { role: "assistant", content: "", tools: [] };
     if (!isRegenerate) {
       setMessages((prev) => [...prev, { role: "user", content: text + (images.length ? ` [${images.length} image${images.length > 1 ? "s" : ""}]` : "") }, assistantMsg]);
@@ -465,6 +467,7 @@ export default function ChatView({
       }
       flushBuf();
       setStreaming(false);
+      setImagesInFlight(0);
       abortRef.current = null;
     }
   }, [input, pendingImages, streaming, selectedModel, agentId, toolsEnabled, ragEnabled, conversationId, onConversationCreated, onAfterResponse, autoTts, speak, toast]);
@@ -657,6 +660,11 @@ export default function ChatView({
         <button title="Exporter en Markdown" disabled={!conversationId} onClick={() => void exportMd()}>
           ⬇ MD
         </button>
+        {pendingImages.length > 0 && (
+          <span className="chip-meta" title={`${pendingImages.length} image(s) jointe(s) — analyse vision activée`}>
+            👁 {pendingImages.length} image(s)
+          </span>
+        )}
         {streaming && (
           <button onClick={() => abortRef.current?.abort()} className="danger">
             Arrêter
@@ -672,6 +680,13 @@ export default function ChatView({
           steps={steps}
           streaming={streaming}
         />
+      )}
+      {streaming && imagesInFlight > 0 && (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 12px", background: "#1e1e1e", borderRadius: 8, margin: "8px 0", fontSize: 13, color: "#e0e0e0" }}>
+          <span>⏳</span>
+          <span>Néo traite votre demande…</span>
+          <span>👁 {imagesInFlight} image(s) en cours d'analyse</span>
+        </div>
       )}
 
       <div className="messages">
