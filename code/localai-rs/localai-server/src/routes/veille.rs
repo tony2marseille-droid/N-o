@@ -94,7 +94,15 @@ async fn etat(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> 
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|t| t.lines().filter(|l| !l.trim().is_empty()).count())
         .unwrap_or(0);
-    Ok(Json(json!({ "running": running, "analyses": nb })))
+    let progres: Value = std::fs::read_to_string(st.settings.data_dir.join("veille_progress.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or(json!({}));
+    Ok(Json(json!({
+        "running": running,
+        "analyses": nb,
+        "progres": progres,
+    })))
 }
 
 async fn liste(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {
