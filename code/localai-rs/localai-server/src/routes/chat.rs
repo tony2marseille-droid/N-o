@@ -204,10 +204,12 @@ pub async fn chat(
         }
     }
     // System prompt combine : agent + memoirs + RAG (miroir _build_system_prompt).
-    // + bascule vision si images jointes a un modele non-vision.
+    // Quand des images sont jointes, on force le modele vision qwen2.5vl:7b
+    // (seul modele vision disponible localement) et on desactive les outils
+    // natifs Ollama (incompatibles avec ce modele : erreur 500 "does not support tools").
     let mut model = model;
     if let Some(imgs) = b.images.as_ref() {
-        if !imgs.is_empty() && !is_vision_model(&model) {
+        if !imgs.is_empty() {
             model = "qwen2.5vl:7b".to_string();
         }
     }
