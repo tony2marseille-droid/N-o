@@ -4,8 +4,8 @@ use axum::extract::DefaultBodyLimit;
 use serde_json::{json, Value};
 
 pub const VISION_MODEL: &str = "qwen2.5vl:7b";
-const DEFAULT_PROMPT: &str = "Décris cette image en détail.";
-const VISION_SYSTEM: &str =
+pub const DEFAULT_PROMPT: &str = "Décris cette image en détail.";
+pub const VISION_SYSTEM: &str =
     "Des images sont jointes au dernier message de l'utilisateur. Tu les vois : analyse-les réellement \
      (objets, texte, couleurs, contexte) et réponds en français à la question posée.";
 
