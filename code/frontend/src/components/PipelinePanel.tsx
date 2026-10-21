@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 export interface PipelineStep {
   name: string;
   at: number;
@@ -16,12 +18,29 @@ interface Props {
 }
 
 function LigneEtape({ step, index }: { step: PipelineStep; index: number }) {
+  const [affiche, setAffiche] = useState("");
+  const [decrypte, setDecrypte] = useState(step.done);
+
+  useEffect(() => {
+    const cible = step.name;
+    let i = 0;
+    const id = setInterval(() => {
+      i += 1;
+      setAffiche(cible.slice(0, i));
+      if (i >= cible.length) {
+        clearInterval(id);
+        setDecrypte(true);
+      }
+    }, 24);
+    return () => clearInterval(id);
+  }, [step.name]);
+
   const heure = new Date(step.at).toLocaleTimeString("fr-FR", { hour12: false });
 
   return (
-    <div className={`pp-line ${step.done ? "pp-decrypte" : "pp-en-cours"}`} style={{ animationDelay: `${index * 40}ms` }}>
+    <div className={`pp-line ${decrypte ? "pp-decrypte" : "pp-en-cours"}`} style={{ animationDelay: `${index * 40}ms` }}>
       <span className="pp-time">[{heure}]</span>
-      <span className="pp-caret">{step.name}</span>
+      <span className="pp-caret">{affiche}</span>
       {step.done ? (
         step.denied ? (
           <span className="pp-status pp-refuse">✗ REFUSÉ</span>
@@ -33,7 +52,7 @@ function LigneEtape({ step, index }: { step: PipelineStep; index: number }) {
       ) : (
         <span className="pp-status pp-run">▸ traitement…</span>
       )}
-      {step.preview && step.done && (
+      {step.preview && decrypte && (
         <span className="pp-preview">{step.preview.slice(0, 90)}</span>
       )}
     </div>
@@ -41,7 +60,19 @@ function LigneEtape({ step, index }: { step: PipelineStep; index: number }) {
 }
 
 export default function PipelinePanel({ agent, model, etaMs, steps, streaming }: Props) {
-  const titre = `pipeline · agent:${agent || "auto"} · modèle:${model || "auto"}`;
+  const [titreRevele, setTitreRevele] = useState("");
+
+  useEffect(() => {
+    const cible = `pipeline · agent:${agent || "auto"} · modèle:${model || "auto"}`;
+    let i = 0;
+    const id = setInterval(() => {
+      i += 1;
+      setTitreRevele(cible.slice(0, i));
+      if (i >= cible.length) clearInterval(id);
+    }, 18);
+    return () => clearInterval(id);
+  }, [agent, model]);
+
   const minutes = etaMs ? Math.round(etaMs / 60000) : null;
   const secondes = etaMs ? Math.round(etaMs / 1000) : null;
 
@@ -49,7 +80,7 @@ export default function PipelinePanel({ agent, model, etaMs, steps, streaming }:
     <div className="pipeline-panel">
       <div className="pp-scanline" />
       <div className="pp-head">
-        <span className="pp-title">{titre}</span>
+        <span className="pp-title">{titreRevele}</span>
         {etaMs !== null && (
           <span className="pp-eta">
             ⏱ ~{minutes !== null && minutes >= 1 ? `${minutes} min` : `${secondes}s`}
