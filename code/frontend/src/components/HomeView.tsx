@@ -106,6 +106,38 @@ function barre(pct: number, warn = 75, crit = 90): string {
   return "";
 }
 
+/* --- Socles & niveaux : socle (famille de base) + niveau estime /5 --- */
+function paramB(m: ModelEntry): number {
+  const s = (m.parameter_size || "").toUpperCase();
+  const v = parseFloat(s) || 0;
+  if (s.includes("M") && !s.includes("B")) return v / 1000;
+  return v;
+}
+
+function socleDe(m: ModelEntry): string {
+  const t = m.tag.toLowerCase();
+  if (t.startsWith("localai-prog") || t.startsWith("localai-")) return "Qwen3-8B + LoRA Néo";
+  if (t.includes("qwen2.5vl")) return "Qwen2.5-VL";
+  if (t.includes("qwen3")) return "Qwen3";
+  if (t.includes("gemma3")) return "Gemma 3";
+  if (t.includes("llama3.1")) return "Llama 3.1";
+  if (t.includes("nomic")) return "Nomic Embed";
+  return "—";
+}
+
+function levelDe(m: ModelEntry): number {
+  const t = m.tag.toLowerCase();
+  if (t.includes("nomic")) return 1;
+  const b = paramB(m);
+  let lv = b >= 14 ? 5 : b >= 10 ? 4 : b >= 7 ? 3 : b >= 4 ? 2 : 1;
+  if (t.startsWith("localai-prog") || t.startsWith("localai-")) lv = Math.min(5, lv + 1);
+  return lv;
+}
+
+function etoiles(n: number): string {
+  return "★".repeat(n) + "☆".repeat(5 - n);
+}
+
 export default function HomeView({ onView, onNewChat, systemInfo, models, lang }: Props) {
   const texte = (key: string) => t(lang, key);
   const [regles, setRegles] = useState<ReglesResp | null>(null);
@@ -289,6 +321,35 @@ export default function HomeView({ onView, onNewChat, systemInfo, models, lang }
             <div className="hud-kv">
               <span>Pont /api/outil (jobs)</span>
               <span className="hud-strong">actif</span>
+            </div>
+            <div style={{ marginTop: 12, borderTop: "1px solid var(--border, #1d2a20)", paddingTop: 8 }}>
+              <div className="hud-label" style={{ marginBottom: 6 }}>
+                Socles & niveaux (estimation taille + capacités + fine-tune)
+              </div>
+              {models
+                .filter((m) => m.installed)
+                .sort((a, b) => levelDe(b) - levelDe(a) || a.tag.localeCompare(b.tag))
+                .map((m) => (
+                  <div
+                    key={m.tag}
+                    className="hud-kv"
+                    title={`Socle : ${socleDe(m)} — niveau ${levelDe(m)}/5`}
+                  >
+                    <span
+                      className="hud-mono"
+                      style={{ overflow: "hidden", textOverflow: "ellipsis", maxWidth: 165, whiteSpace: "nowrap", fontSize: 11 }}
+                    >
+                      {m.tag}{m.loaded ? " ●" : ""}
+                    </span>
+                    <span className="hud-label" style={{ whiteSpace: "nowrap" }}>
+                      {socleDe(m)}{" "}
+                      <span style={{ color: "var(--acc, #3ddc97)", letterSpacing: 1 }}>
+                        {etoiles(levelDe(m))}
+                      </span>{" "}
+                      {levelDe(m)}/5
+                    </span>
+                  </div>
+                ))}
             </div>
           </div>
         </div>
