@@ -156,10 +156,12 @@ def tool_generate_image(
 
 
 def tool_image_search(query: str) -> str:
-    """Recherche d'images de reference : Openverse + Wikimedia Commons (+ DDG).
+    """Recherche d'images de reference : Wikipedia (personnes/sujets reels),
+    Wikimedia Commons, Openverse, DuckDuckGo.
 
-    Retourne titres + URL d'images telechargeables pour analyse par le
-    modele vision.
+    L'UA doit etre CONFORME a la politique Wikimedia (identite + contact),
+    sinon reponse 403 silencieuse. Retourne titres + URL d'images
+    telechargeables pour le modele vision ou fetch_image.
     """
     import html as _html
 
@@ -168,8 +170,35 @@ def tool_image_search(query: str) -> str:
     query = (query or "").strip()[:200]
     if not query:
         return "Erreur: requete vide"
-    ua = {"User-Agent": "LocalAI-Assistant/1.0 (recherche de reference objet)"}
+    ua = {"User-Agent": "NeoLocalAI/1.0 (assistant IA personnel; contact: neo@localai.local)"}
     out: list[str] = []
+
+    # 0. Wikipedia pageimages : LA source fiable pour les personnes et
+    #    sujets notoires (photo officielle de l'article). fr puis en.
+    for lang in ("fr", "en"):
+        try:
+            r = httpx.get(
+                f"https://{lang}.wikipedia.org/w/api.php",
+                params={
+                    "action": "query", "format": "json", "redirects": 1,
+                    "prop": "pageimages", "piprop": "thumbnail",
+                    "pithumbsize": 800, "titles": query,
+                },
+                headers=ua, timeout=12,
+            )
+            if r.status_code != 200:
+                continue
+            pages = r.json().get("query", {}).get("pages", {})
+            for p in pages.values():
+                src = p.get("thumbnail", {}).get("source", "")
+                if src:
+                    titre = _html.unescape(p.get("title", query))[:70]
+                    out.append(f"{len(out)+1}. [wikipedia] {titre}\n   IMAGE: {src}")
+                    break
+            if out:
+                break
+        except Exception:
+            continue
 
     try:
         r = httpx.get(
@@ -242,8 +271,10 @@ def tool_image_search(query: str) -> str:
         pass
 
     return "\n\n".join(out) if out else (
-        "Aucune image trouvee. Conseil : utilise quand meme tes connaissances "
-        "geometriques sur l'objet et precise les dimensions standard."
+        "Aucune image trouvee pour cette recherche. Essaie : (1) une "
+        "formulation plus precise du sujet, (2) web_search pour trouver "
+        "manuellement l'URL d'une image, puis fetch_image dessus, ou "
+        "(3) decris ce que tu cherches si c'est un concept abstrait."
     )
 
 

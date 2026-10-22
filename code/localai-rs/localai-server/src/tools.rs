@@ -27,18 +27,6 @@ pub async fn specs(root: &std::path::Path, names: &[String]) -> ApiResult<Vec<Va
             return Ok(arr.clone());
         }
     }
-    if let Some(w) = crate::worker::get() {
-        if let Ok(v) = w
-            .call(serde_json::json!({"op":"specs","names":names}), 60)
-            .await
-        {
-            if let Some(arr) = v.as_array() {
-                let arr = arr.clone();
-                cache().lock().unwrap().insert(key, Value::Array(arr.clone()));
-                return Ok(arr);
-            }
-        }
-    }
     let names_py: Vec<String> = names.iter().map(|n| format!("'{}'", n.replace('\'', ""))).collect();
     let code = format!(
         "from backend.tools.executor import ollama_tool_specs; print(json.dumps(ollama_tool_specs([{}])))",
@@ -52,39 +40,35 @@ pub async fn specs(root: &std::path::Path, names: &[String]) -> ApiResult<Vec<Va
 /// Routeur d'intention Python (fallback quand la detection Rust ne matche pas).
 /// Retourne l'id d'agent ("general", "dev", ...) ou "" si indecis.
 pub async fn route_agent(root: &std::path::Path, message: &str) -> String {
-    if let Some(w) = crate::worker::get() {
-        if let Ok(v) = w
-            .call(serde_json::json!({"op":"route","message":message}), 60)
-            .await
-        {
-            if let Some(s) = v.as_str() {
-                return s.to_string();
-            }
-        }
-    }
+    route_agent_full(root, message).await.0
+}
+
+/// Idem route_agent mais retourne AUSSI la raison (intention detectee),
+/// affichee en badge dans le chat ("routé : ...").
+pub async fn route_agent_full(root: &std::path::Path, message: &str) -> (String, String) {
     let q = message.replace('\'', "").chars().take(500).collect::<String>();
     let code = format!(
-        "from backend.core.router import route_agent; r = route_agent('{}'); print(json.dumps(r[0] if isinstance(r, (list, tuple)) else r))",
+        "from backend.core.router import route_agent; r = route_agent('{}'); print(json.dumps(list(r) if isinstance(r, (list, tuple)) else [r, '']))",
         q);
-    crate::pybridge::py_json(root, &code)
-        .await
-        .ok()
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_default()
+    match crate::pybridge::py_json(root, &code).await {
+        Ok(v) => {
+            let arr = v.as_array().cloned().unwrap_or_default();
+            let agent = arr.first()
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            let raison = arr.get(1)
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            (agent, raison)
+        }
+        Err(_) => (String::new(), String::new()),
+    }
 }
 
 /// System prompt d'un agent (bridge). Vide si inconnu.
 pub async fn agent_system(root: &std::path::Path, agent_id: &str) -> String {
-    if let Some(w) = crate::worker::get() {
-        if let Ok(v) = w
-            .call(serde_json::json!({"op":"agent_info","id":agent_id}), 60)
-            .await
-        {
-            if let Some(s) = v.get("system").and_then(|x| x.as_str()) {
-                return s.to_string();
-            }
-        }
-    }
     let id = agent_id.replace('\'', "");
     let code = format!(
         "from backend.core.agents import get_agent; a = get_agent('{}'); print(json.dumps(a.system_prompt if a and getattr(a, 'system_prompt', None) else ''))",
@@ -98,16 +82,6 @@ pub async fn agent_system(root: &std::path::Path, agent_id: &str) -> String {
 
 /// Flag RAG d'un agent (docs -> true). Faux si inconnu.
 pub async fn agent_rag(root: &std::path::Path, agent_id: &str) -> bool {
-    if let Some(w) = crate::worker::get() {
-        if let Ok(v) = w
-            .call(serde_json::json!({"op":"agent_info","id":agent_id}), 60)
-            .await
-        {
-            if let Some(b) = v.get("rag").and_then(|x| x.as_bool()) {
-                return b;
-            }
-        }
-    }
     let id = agent_id.replace('\'', "");
     let code = format!(
         "from backend.core.agents import get_agent; a = get_agent('{}'); print(json.dumps(bool(a and getattr(a, 'rag', False))))",
@@ -121,19 +95,6 @@ pub async fn agent_rag(root: &std::path::Path, agent_id: &str) -> bool {
 
 /// Outils d'un agent (via pont). Retourne [] si inconnu.
 pub async fn agent_tools(root: &std::path::Path, agent_id: &str) -> Vec<String> {
-    if let Some(w) = crate::worker::get() {
-        if let Ok(v) = w
-            .call(serde_json::json!({"op":"agent_info","id":agent_id}), 60)
-            .await
-        {
-            if let Some(a) = v.get("tools").and_then(|x| x.as_array()) {
-                return a
-                    .iter()
-                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                    .collect();
-            }
-        }
-    }
     let id = agent_id.replace('\'', "");
     let code = format!(
         "from backend.core.agents import get_agent; a = get_agent('{}'); print(json.dumps(a.tools if a and getattr(a, 'tools', None) else []))",
@@ -158,18 +119,6 @@ pub async fn execute(
     if let Some(refus) = precheck(root, name, args) {
         return refus;
     }
-    // Worker chaud : plus de spawn Python par appel.
-    if let Some(w) = crate::worker::get() {
-        if let Ok(v) = w
-            .call(
-                serde_json::json!({"op":"tool","name":name,"args":args,"level":level}),
-                1800,
-            )
-            .await
-        {
-            return v.as_str().unwrap_or("").chars().take(6000).collect();
-        }
-    }
     let nm = name.replace('\'', "");
     let lv = level.replace('\'', "");
     let args_json = serde_json::to_string(args).unwrap_or_else(|_| "{}".into());
@@ -183,13 +132,11 @@ pub async fn execute(
          args = json.load(open(r'{}')); \
          print(execute_tool('{}', args, PermissionManager('{}')), end='')",
         tmp.display(), nm, lv);
-    // Texte brut (pas du JSON) : py_text, timeout long (Blender/SD : la
-    // chaine Kontext complete + QC peut approcher 15-20 min sous contention
-    // VRAM avec le LLM agent actif).
+    // Texte brut (pas du JSON) : py_text, timeout long (Blender/SD).
     let out = crate::pybridge::py_text_timeout(
         root,
         &["-c", &code],
-        std::time::Duration::from_secs(1800),
+        std::time::Duration::from_secs(900),
     )
     .await;
     let _ = std::fs::remove_file(&tmp);
@@ -209,17 +156,6 @@ pub const MAX_TOOL_ROUNDS: usize = 14;
 pub fn default_tools() -> Vec<String> {
     ["calculator", "get_datetime", "list_dir", "read_file", "check_code", "deep_research"]
         .iter().map(|s| s.to_string()).collect()
-}
-
-/// Racine sandbox (ecriture) lue depuis security_rules.json. Sert a indiquer
-/// aux agents le dossier de travail absolu (evite les chemins relatifs ou
-/// inventes type /home/... refuses par la sandbox).
-pub fn sandbox_root(root: &std::path::Path) -> String {
-    rules(root)
-        .get("sandbox_root")
-        .and_then(|x| x.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "E:\\ia\\workspace".to_string())
 }
 
 // ---- Sandbox chantier 2 : double controle Rust avant le pont ----

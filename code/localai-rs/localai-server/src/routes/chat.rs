@@ -3,7 +3,7 @@
 use axum::{
     extract::State,
     response::sse::{Event, KeepAlive, Sse},
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use futures_util::{Stream, StreamExt};
@@ -22,7 +22,20 @@ use crate::AppState;
 mod vision;
 
 pub fn router() -> Router<Arc<AppState>> {
-    Router::new().route("/api/chat", post(chat)).layer(vision::body_limit())
+    Router::new()
+        .route("/api/chat", post(chat))
+        .route("/api/user-active", get(user_active))
+        .layer(vision::body_limit())
+}
+
+/// Marqueur d'activite utilisateur : les jobs de fond (boucle agents,
+/// veille, conseil...) passent background=true et ne le mettent PAS a jour.
+/// Ils consultent GET /api/user-active pour ceder la file d'attente GPU
+/// a l'utilisateur interactif (priorite Neo).
+async fn user_active(State(st): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let last: i64 = st.db.get_setting("user_active_at", "").parse().unwrap_or(0);
+    let now = crate::routes::finetune::now_unix() as i64;
+    Json(json!({ "seconds_since_user": if last > 0 { now - last } else { -1i64 } }))
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -37,6 +50,9 @@ pub struct ChatBody {
     pub rag_enabled: Option<bool>,
     pub images: Option<Vec<String>>,
     pub web_enabled: Option<bool>,
+    /// true = requete de fond (boucle agents, scripts auto) : ne met pas
+    /// a jour le marqueur d'activite utilisateur (priorite file d'attente).
+    pub background: Option<bool>,
 }
 
 fn sse_data(v: serde_json::Value) -> String {
@@ -87,6 +103,15 @@ pub async fn chat(
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
     if b.message.trim().is_empty() {
         return Err(ApiError(AppError::BadRequest("message vide".into())));
+    }
+    // Priorite file d'attente : trace l'activite utilisateur interactif.
+    // Les requetes de fond (background=true) ne touchent pas ce marqueur :
+    // elles doivent lui ceder la place (voir GET /api/user-active).
+    if !b.background.unwrap_or(false) {
+        let _ = st.db.set_setting(
+            "user_active_at",
+            &crate::routes::finetune::now_unix().to_string(),
+        );
     }
     let mut model = if b.model.as_deref().unwrap_or("auto") == "auto" {
         st.settings.default_model.clone()
@@ -158,40 +183,45 @@ pub async fn chat(
 
     // Outils : agent explicite, detection d'intention, ou activation explicite (+ web).
     // 1) agent explicite (non-auto) -> ses outils.
-    // 2) agent auto/absent -> detection 3D/image (le routeur Python rate ces
-    //    intentions), sinon pont route_agent Python (comportement d'origine).
+    // 2) sinon : routeur Python enrichi EN PRIORITE (il distingue
+    //    voir_image / generer_image / 3d / dev / docs). L'ancienne
+    //    detection Rust court-circuitait sur "photo"/"image" et envoyait
+    //    "montre-moi une photo de X" en cad3d (mesh !) ; elle ne sert plus
+    //    que de repli, avec des mots-cles 3D STRICTS uniquement.
     let mut tool_names: Vec<String> = Vec::new();
     let mut resolved_agent: Option<String> = None;
+    let mut route_reason: String = String::new();
     if let Some(aid) = b.agent_id.as_deref() {
         if !aid.is_empty() && aid != "auto" {
             tool_names = tools::agent_tools(&st.settings.root_dir, aid).await;
             if !tool_names.is_empty() {
                 resolved_agent = Some(aid.to_string());
+                route_reason = format!("agent explicite: {aid}");
             }
         }
     }
     if tool_names.is_empty() {
-        let q = b.message.to_lowercase();
-        let is_3d = ["blender", "3d", "stl", "scad", "mesh", "objet", "support",
-            "imprim", "tranche", "g-code", "gcode", "telephone", "figurine",
-            "image", "photo", "dessin", "genere", "génère", "creer", "créer",
-            "rendu", "render", "texture", "sculpt"].iter().any(|k| q.contains(k));
-        // Garde-fou : "creer/generer" seuls (sans objet visuel/3D) ne routent pas.
-        let visual = ["blender", "3d", "stl", "scad", "mesh", "imprim", "image",
-            "photo", "rendu", "render", "texture", "figurine", "telephone"].iter().any(|k| q.contains(k));
-        if is_3d && visual {
-            tool_names = tools::agent_tools(&st.settings.root_dir, "cad3d").await;
-            if !tool_names.is_empty() {
-                resolved_agent = Some("cad3d".to_string());
+        let (mut routed, mut raison) =
+            tools::route_agent_full(&st.settings.root_dir, &b.message).await;
+        if (routed.is_empty() || routed == "general")
+            && routed != "cad3d"
+        {
+            // Repli Rust uniquement si mots-cles 3D STRICTS (jamais
+            // photo/image/dessin : ce sont des demandes d'images 2D).
+            let q = b.message.to_lowercase();
+            let strict_3d = ["blender", "3d", "stl", "scad", "mesh",
+                "imprim", "tranche", "g-code", "gcode", "openscad"]
+                .iter().any(|k| q.contains(k));
+            if strict_3d {
+                routed = "cad3d".to_string();
+                raison = "repli Rust: mots-cles 3D stricts".to_string();
             }
-        } else {
-            // Fallback : routeur Python (code->dev, etc.).
-            let routed = tools::route_agent(&st.settings.root_dir, &b.message).await;
-            if !routed.is_empty() && routed != "general" {
-                tool_names = tools::agent_tools(&st.settings.root_dir, &routed).await;
-                if !tool_names.is_empty() {
-                    resolved_agent = Some(routed);
-                }
+        }
+        if !routed.is_empty() && routed != "general" {
+            tool_names = tools::agent_tools(&st.settings.root_dir, &routed).await;
+            if !tool_names.is_empty() {
+                resolved_agent = Some(routed.clone());
+                route_reason = raison;
             }
         }
     }
@@ -267,6 +297,8 @@ pub async fn chat(
         "type": "meta",
         "conversation_id": cid,
         "model": model,
+        "agent": resolved_agent.clone(),
+        "route_reason": route_reason,
     })));
 
     if tool_names.is_empty() {
