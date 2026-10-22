@@ -5,6 +5,7 @@ export interface PipelineStep {
   at: number;
   denied?: boolean;
   preview?: string;
+  args?: Record<string, unknown>;
   done: boolean;
   duration?: number;
 }
@@ -15,6 +16,25 @@ interface Props {
   etaMs: number | null;
   steps: PipelineStep[];
   streaming: boolean;
+}
+
+/** Resume compact des arguments d'un appel d'outil pour l'affichage. */
+function resumeArgs(args?: Record<string, unknown>): string {
+  if (!args || Object.keys(args).length === 0) return "";
+  const parties = Object.entries(args).map(([cle, val]) => {
+    let v: string;
+    if (typeof val === "string") {
+      v = val.length > 48 ? val.slice(0, 45) + "…" : val;
+      v = `"${v}"`;
+    } else if (typeof val === "number" || typeof val === "boolean") {
+      v = String(val);
+    } else {
+      v = "…";
+    }
+    return `${cle}=${v}`;
+  });
+  const s = parties.join(", ");
+  return s.length > 110 ? s.slice(0, 107) + "…" : s;
 }
 
 function LigneEtape({ step, index }: { step: PipelineStep; index: number }) {
@@ -36,11 +56,14 @@ function LigneEtape({ step, index }: { step: PipelineStep; index: number }) {
   }, [step.name]);
 
   const heure = new Date(step.at).toLocaleTimeString("fr-FR", { hour12: false });
+  const argsTxt = resumeArgs(step.args);
+  const previewTxt = (step.preview ?? "").slice(0, 160);
 
   return (
     <div className={`pp-line ${decrypte ? "pp-decrypte" : "pp-en-cours"}`} style={{ animationDelay: `${index * 40}ms` }}>
       <span className="pp-time">[{heure}]</span>
       <span className="pp-caret">{affiche}</span>
+      {argsTxt && <span className="pp-args">({argsTxt})</span>}
       {step.done ? (
         step.denied ? (
           <span className="pp-status pp-refuse">✗ REFUSÉ</span>
@@ -52,8 +75,10 @@ function LigneEtape({ step, index }: { step: PipelineStep; index: number }) {
       ) : (
         <span className="pp-status pp-run">▸ traitement…</span>
       )}
-      {step.preview && decrypte && (
-        <span className="pp-preview">{step.preview.slice(0, 90)}</span>
+      {previewTxt && decrypte && (
+        <span className="pp-preview" title={step.preview}>
+          → {previewTxt}
+        </span>
       )}
     </div>
   );
@@ -61,6 +86,7 @@ function LigneEtape({ step, index }: { step: PipelineStep; index: number }) {
 
 export default function PipelinePanel({ agent, model, etaMs, steps, streaming }: Props) {
   const [titreRevele, setTitreRevele] = useState("");
+  const [secondes, setSecondes] = useState(0);
 
   useEffect(() => {
     const cible = `pipeline · agent:${agent || "auto"} · modèle:${model || "auto"}`;
@@ -73,8 +99,23 @@ export default function PipelinePanel({ agent, model, etaMs, steps, streaming }:
     return () => clearInterval(id);
   }, [agent, model]);
 
+  // Chronometre vivant : combien de temps Néo travaille en continu.
+  useEffect(() => {
+    if (!streaming) {
+      setSecondes(0);
+      return;
+    }
+    const debut = Date.now();
+    const id = setInterval(() => setSecondes(Math.floor((Date.now() - debut) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [streaming]);
+
   const minutes = etaMs ? Math.round(etaMs / 60000) : null;
-  const secondes = etaMs ? Math.round(etaMs / 1000) : null;
+  const secondesEta = etaMs ? Math.round(etaMs / 1000) : null;
+  const enCours = steps.filter((s) => !s.done).length;
+  const phase = enCours > 0
+    ? `exécution : ${steps[steps.length - 1].name}${steps[steps.length - 1].args ? " " + resumeArgs(steps[steps.length - 1].args) : ""}`
+    : `${model || "modèle"} génère la réponse`;
 
   return (
     <div className="pipeline-panel">
@@ -83,7 +124,7 @@ export default function PipelinePanel({ agent, model, etaMs, steps, streaming }:
         <span className="pp-title">{titreRevele}</span>
         {etaMs !== null && (
           <span className="pp-eta">
-            ⏱ ~{minutes !== null && minutes >= 1 ? `${minutes} min` : `${secondes}s`}
+            ⏱ ~{minutes !== null && minutes >= 1 ? `${minutes} min` : `${secondesEta}s`}
           </span>
         )}
         {streaming && <span className="pp-live">● live</span>}
@@ -92,9 +133,9 @@ export default function PipelinePanel({ agent, model, etaMs, steps, streaming }:
         {steps.map((s, i) => (
           <LigneEtape key={`${s.name}-${s.at}`} step={s} index={i} />
         ))}
-        {streaming && steps.length === 0 && (
+        {streaming && (
           <div className="pp-line pp-en-cours">
-            <span className="pp-caret">▍Néo réfléchit…</span>
+            <span className="pp-caret">▍{phase}… {secondes}s</span>
           </div>
         )}
       </div>

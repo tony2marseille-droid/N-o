@@ -52,7 +52,38 @@ CAD3D_HINTS = re.compile(
     r"\b(imprim\w*\s*3\s*d|impression\s+3\s*d|imprime[-\s]?moi|\.stl\b|\bstl\b|"
     r"g-?code\b|\bscad\b|slicer\b|tranch\w+|"
     r"(?:objet|mod[eè]le|pi[eè]ce|design)\s+(?:en\s+)?3\s*d(?:\b|$)|"
-    r"3\s*d\s*(?:objet|mod[eè]le|pi[eè]ce)|con[cç]ois[-\s]?moi\s+un)\b",
+    r"3\s*d\s*(?:objet|mod[eè]le|pi[eè]ce)|con[cç]ois[-\s]?moi\s+un|"
+    r"mesh\b|maillage|cad\b|openscad|blender)\b",
+    re.IGNORECASE,
+)
+# VOIR une photo/image EXISTANTE (recherche web + telechargement) :
+# verbe de consultation + photo/portrait/image de quelque chose.
+VOIR_IMAGE_HINTS = re.compile(
+    r"\b(?:montre|montrer|affiche|afficher|trouve|trouver|cherche|chercher|"
+    r"fais(?:[- ]moi)?\s+voir|montre[- ]moi|fais[- ]moi\s+(?:une\s+)?(?:photo|image)|"
+    r"j(?:e\s+)?(?:voudrais|aimerais)\s+voir|a\s+ quoi\s+ressemble|"
+    r"une?\s+(?:photo|image|portrait|photo de profil))\s+(?:de|du|des|d')?\s*\w",
+    re.IGNORECASE,
+)
+VOIR_IMAGE_STRONG = re.compile(
+    r"\b(montre|montrer|affiche|afficher|trouve|trouver|cherche|chercher|"
+    r"voir|regarde|ressemble)\b[^.?!]{0,60}\b(photo|photos|portrait|image|"
+    r"images|visage|figure)\b",
+    re.IGNORECASE,
+)
+# GENERER une image nouvelle (IA locale).
+GEN_IMAGE_HINTS = re.compile(
+    r"\b(g[ée]n[eè]re[rz]?|g[ée]n[eè]ration|cr[ée]e[rz]?|dessine|dessiner|"
+    r"fais[- ]moi\s+(?:une\s+)?(?:image|deco|d[ée]co|affiche|illustration|vignette|"
+    r"banni[eè]re|avatar|sticker|visuel|fond|wallpaper|logo)|"
+    r"une?\s+(?:image|illustration|affiche|deco|d[ée]co)\s+(?:de|du|des|sur|th[eè]me))\b"
+    r"[^.?!]{0,60}\b(image|images|png|jpg|photo|dessin|affiche|illustration|"
+    r"vignette|banni[eè]re|avatar|sticker|visuel|fond|wallpaper|logo|deco|d[ée]co)\b",
+    re.IGNORECASE,
+)
+IMAGE_TOPIC_HINTS = re.compile(
+    r"\b(photo|photos|portrait|image|images|dessin|affiche|illustration|"
+    r"visage|acteur|actrice|c[eé]l[ée]brit)\b",
     re.IGNORECASE,
 )
 DOCS_HINTS = re.compile(
@@ -114,9 +145,75 @@ def classify(message: str) -> str:
     return "general"
 
 
+def _llm_intention(message: str) -> str:
+    """Niveau 2 : classifieur LLM leger (qwen3:8b, temp 0) pour les demandes
+    ambigues que les regex n'ont pas tranchees. Retourne une intention parmi
+    un ensemble ferme, ou "" si indisponible/erreur. ~1-2 s max."""
+    import json as _json
+    import os as _os
+    import urllib.request as _urllib
+
+    prompt = (
+        "Classifie cette demande utilisateur en UNE SEULE intention, sans "
+        "aucun autre texte. Intentions possibles :\n"
+        "- voir_image : l'utilisateur veut VOIR une photo/image EXISTANTE "
+        "(recherche d'une photo reelle d'une personne, d'un objet, d'un lieu)\n"
+        "- generer_image : il veut faire CREER/DESSINER une nouvelle image\n"
+        "- 3d : conception 3D, piece, STL, impression 3D, modélisation\n"
+        "- autre : tout le reste (question, code, discussion...)\n"
+        f"Demande : {message[:300]}\n"
+        "Reponds UNIQUEMENT par un mot : voir_image, generer_image, 3d ou autre."
+    )
+    try:
+        body = _json.dumps({
+            "model": _os.environ.get("LOCALAI_ROUTER_MODEL", "qwen3:8b"),
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "think": False,
+            "options": {"temperature": 0.0, "num_predict": 6},
+        }).encode("utf-8")
+        req = _urllib.Request(
+            _os.environ.get("LOCALAI_OLLAMA_URL", "http://127.0.0.1:11434")
+            + "/api/chat",
+            data=body, headers={"Content-Type": "application/json"},
+        )
+        with _urllib.urlopen(req, timeout=20) as rep:
+            texte = _json.loads(rep.read().decode("utf-8")).get(
+                "message", {}).get("content", "").strip().lower()
+        for intention in ("voir_image", "generer_image", "3d", "autre"):
+            if intention in texte:
+                return intention
+    except Exception:
+        pass
+    return ""
+
+
 def route_agent(message: str) -> tuple[str, str]:
-    """Choisit l'agent automatiquement selon le type de demande."""
+    """Choisit l'agent automatiquement selon le type de demande.
+
+    Ordre de priorite des regles rapides (niveau 1) :
+    1. voir_image : montrer/trouver une photo EXISTANTE (avant 3d : une
+       demande de photo d'une personne ne doit jamais finir en mesh)
+    2. generer_image : creer une image IA
+    3. cad3d / docs / dev (regles historiques)
+    Niveau 2 : si le message parle d'image/3d sans qu'aucune regle ne
+    tranche, un classifieur LLM leger arbitre (~1-2 s).
+    """
     msg = message.strip()
+
+    # 1. VOIR une photo existante (doit passer AVANT generer_image et 3d :
+    #    "montre-moi une photo de X" ne doit jamais devenir un mesh).
+    if VOIR_IMAGE_STRONG.search(msg):
+        return "image", (
+            "intention=voir_image (photo existante : web_search + fetch_image, "
+            "pas de generation IA)"
+        )
+
+    # 2. GENERER une image IA.
+    if GEN_IMAGE_HINTS.search(msg) and not CAD3D_HINTS.search(msg):
+        return "image", "intention=generer_image (generation IA locale)"
+
+    # 3. Regles historiques.
     if CAD3D_HINTS.search(msg):
         return "cad3d", "agent auto: conception/impression 3D"
     if DOCS_HINTS.search(msg):
@@ -125,6 +222,18 @@ def route_agent(message: str) -> tuple[str, str]:
         CODING_HINTS.search(msg) and len(msg) > 60
     ):
         return "dev", "agent auto: developpement/action code"
+
+    # 4. Niveau 2 (LLM) uniquement si le sujet image/3d est present mais
+    #    qu'aucune regle n'a tranche (cas ambigus sans verbe clair).
+    if IMAGE_TOPIC_HINTS.search(msg) or CAD3D_HINTS.search(msg):
+        intention = _llm_intention(msg)
+        if intention == "voir_image":
+            return "image", "intention=voir_image (classifieur LLM)"
+        if intention == "generer_image":
+            return "image", "intention=generer_image (classifieur LLM)"
+        if intention == "3d":
+            return "cad3d", "intention=3d (classifieur LLM)"
+
     return "general", ""
 
 

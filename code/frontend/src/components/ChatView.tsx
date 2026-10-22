@@ -326,6 +326,7 @@ export default function ChatView({
                 at: idx >= 0 ? copy[idx].at : Date.now(),
                 denied: Boolean(event.denied),
                 preview: String(event.preview ?? ""),
+                args: (event.args as Record<string, unknown>) ?? undefined,
                 done: true,
               };
               if (idx >= 0) {
