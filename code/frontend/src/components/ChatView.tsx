@@ -67,8 +67,11 @@ function renderContent(text: string) {
     .replace(/\*\*([^*\n]{1,200})\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`\n]{1,200})`/g, "<code>$1</code>")
     // Chemins d'images locales cites par l'assistant -> apercu inline.
+    // Absolus (E:\...) ET relatifs (data\img_gen_..., workspace\images\...)
+    // renvoyes par les outils : la route /api/sd/file resout contre la
+    // racine et refuse toute traversée de chemin.
     .replace(
-      /\b([A-Za-z]:\\[^\s<>"'`]+?\.(?:png|jpe?g|webp))\b/gi,
+      /\b((?:[A-Za-z]:\\|data[/\\]|workspace[/\\])[^\s<>"'`*]+?\.(?:png|jpe?g|webp))\b/gi,
       (_m, p: string) =>
         `<img class="msg-image" alt="image" src="/api/sd/file?path=${encodeURIComponent(p)}" />`
     );
@@ -309,6 +312,20 @@ export default function ChatView({
               if (!last || last.role !== "assistant") return copy;
               const contenu = last.content + (event.content as string);
               finalContent = contenu;
+              copy[copy.length - 1] = { ...last, content: contenu };
+              return copy;
+            });
+          } else if (event.type === "replace") {
+            // Garde-fou serveur : le contenu a ete corrige (chemins
+            // d'images invalides remplaces/retires) -> remplacement
+            // integral du message deja streamé, buffer purgé.
+            bufRef.current = "";
+            const contenu = String(event.content ?? "");
+            finalContent = contenu;
+            setMessages((prev) => {
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (!last || last.role !== "assistant") return copy;
               copy[copy.length - 1] = { ...last, content: contenu };
               return copy;
             });

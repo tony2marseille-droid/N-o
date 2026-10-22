@@ -71,6 +71,18 @@ VOIR_IMAGE_STRONG = re.compile(
     r"images|visage|figure)\b",
     re.IGNORECASE,
 )
+# MODIFIER une image EXISTANTE (edition img2img via edit_image) :
+# verbe de modification + cible visuelle proche (image, photo, deco,
+# livree, fond, paquet...). Doit passer AVANT generer_image : la base
+# existe deja, on ne doit pas regenerer de zero.
+EDIT_IMAGE_HINTS = re.compile(
+    r"\b(?:applique|appliquer|superpose|superposer|mets\b|mettre|"
+    r"repeins?|repeindre|recolore|recolorer|retouche[rz]?|incruste[rz]?|"
+    r"modifie[rz]?|change[rz]?|remplace[rz]?)\b[^.?!]{0,80}\b"
+    r"(?:image|photo|deco|d[ée]co|livree|livr[ée]e|couleurs?|fond|style|"
+    r"motif|paquet|design|logo|texture)\b",
+    re.IGNORECASE,
+)
 # GENERER une image nouvelle (IA locale).
 GEN_IMAGE_HINTS = re.compile(
     r"\b(g[ée]n[eè]re[rz]?|g[ée]n[eè]ration|cr[ée]e[rz]?|dessine|dessiner|"
@@ -158,11 +170,15 @@ def _llm_intention(message: str) -> str:
         "aucun autre texte. Intentions possibles :\n"
         "- voir_image : l'utilisateur veut VOIR une photo/image EXISTANTE "
         "(recherche d'une photo reelle d'une personne, d'un objet, d'un lieu)\n"
+        "- modifier_image : il veut MODIFIER une image existante (appliquer "
+        "une livree ou une deco, recolorer, changer le fond, ajouter ou "
+        "enlever un element sur une image deja la)\n"
         "- generer_image : il veut faire CREER/DESSINER une nouvelle image\n"
         "- 3d : conception 3D, piece, STL, impression 3D, modélisation\n"
         "- autre : tout le reste (question, code, discussion...)\n"
         f"Demande : {message[:300]}\n"
-        "Reponds UNIQUEMENT par un mot : voir_image, generer_image, 3d ou autre."
+        "Reponds UNIQUEMENT par un mot : voir_image, modifier_image, "
+        "generer_image, 3d ou autre."
     )
     try:
         body = _json.dumps({
@@ -180,7 +196,7 @@ def _llm_intention(message: str) -> str:
         with _urllib.urlopen(req, timeout=20) as rep:
             texte = _json.loads(rep.read().decode("utf-8")).get(
                 "message", {}).get("content", "").strip().lower()
-        for intention in ("voir_image", "generer_image", "3d", "autre"):
+        for intention in ("voir_image", "modifier_image", "generer_image", "3d", "autre"):
             if intention in texte:
                 return intention
     except Exception:
@@ -209,11 +225,16 @@ def route_agent(message: str) -> tuple[str, str]:
             "pas de generation IA)"
         )
 
-    # 2. GENERER une image IA.
+    # 2. MODIFIER une image existante (edition : la base existe deja,
+    #    edit_image doit etre utilise, pas une regeneration complete).
+    if EDIT_IMAGE_HINTS.search(msg):
+        return "image", "intention=modifier_image (edition d'une image existante)"
+
+    # 3. GENERER une image IA.
     if GEN_IMAGE_HINTS.search(msg) and not CAD3D_HINTS.search(msg):
         return "image", "intention=generer_image (generation IA locale)"
 
-    # 3. Regles historiques.
+    # 4. Regles historiques.
     if CAD3D_HINTS.search(msg):
         return "cad3d", "agent auto: conception/impression 3D"
     if DOCS_HINTS.search(msg):
@@ -223,12 +244,14 @@ def route_agent(message: str) -> tuple[str, str]:
     ):
         return "dev", "agent auto: developpement/action code"
 
-    # 4. Niveau 2 (LLM) uniquement si le sujet image/3d est present mais
+    # 5. Niveau 2 (LLM) uniquement si le sujet image/3d est present mais
     #    qu'aucune regle n'a tranche (cas ambigus sans verbe clair).
     if IMAGE_TOPIC_HINTS.search(msg) or CAD3D_HINTS.search(msg):
         intention = _llm_intention(msg)
         if intention == "voir_image":
             return "image", "intention=voir_image (classifieur LLM)"
+        if intention == "modifier_image":
+            return "image", "intention=modifier_image (classifieur LLM)"
         if intention == "generer_image":
             return "image", "intention=generer_image (classifieur LLM)"
         if intention == "3d":
