@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.api import (
+    routes_fiches,
     routes_benchmark,
     routes_chat,
     routes_collab,
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_tts.router)
     app.include_router(routes_memory.router)
     app.include_router(routes_documents.router)
+    app.include_router(routes_fiches.router)
     app.include_router(routes_benchmark.router)
     app.include_router(routes_settings.router)
     app.include_router(routes_security.router)

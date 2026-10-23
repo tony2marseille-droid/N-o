@@ -209,14 +209,14 @@ def tool_convertir_image(source: str, largeur: int = 0, hauteur: int = 0,
 def tool_telecharger_fichier(url: str, destination: str = "") -> str:
     """Telecharge un fichier (PDF, archive, code, image...) vers le dossier
     sandbox. Non-image : contrairement a fetch_image, tout type est accepte."""
-    import tempfile
-
-    import httpx
-
-    url = (url or "").strip()
-    if not re.match(r"^https?://", url):
-        return "Erreur: URL invalide"
     try:
+        import tempfile
+
+        import httpx
+
+        url = (url or "").strip()
+        if not re.match(r"^https?://", url):
+            return "Erreur: URL invalide"
         resp = httpx.get(
             url,
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0"},
@@ -244,3 +244,49 @@ def tool_telecharger_fichier(url: str, destination: str = "") -> str:
         return f"Fichier telecharge: {dest} ({len(resp.content) // 1024} Ko)"
     except Exception as exc:
         return f"Erreur telechargement: {exc}"
+
+
+# ---- 7. Envoi de message/image sur Telegram (bot configure) ----
+
+def tool_envoyer_telegram(texte: str = "", image_path: str = "") -> str:
+    """Envoie un message et/ou une image sur le(s) chat(s) Telegram connectes
+    au bot configure (token dans settings). Si aucun chat actif, retour erreur.
+
+    texte : message a envoyer (max 4000 car). image_path : chemin absolu d'une
+    image locale a joindre (optionnel). Au moins l'un des deux requis.
+    """
+    try:
+        from backend.core.database import get_db
+        import httpx
+
+        db = get_db()
+        token = db.get_setting("telegram_token", "").strip()
+        if not token:
+            return "Erreur: token Telegram non configure (Reglages > Connexions)"
+        chat_ids = [r["chat_id"] for r in db.query_all(
+            "SELECT chat_id FROM telegram_sessions")]
+        if not chat_ids:
+            return "Erreur: aucune conversation Telegram active (envoyez /start au bot)"
+        async def _envoyer():
+            async with httpx.AsyncClient(timeout=30) as client:
+                for cid in chat_ids:
+                    if (texte or "").strip():
+                        await client.post(
+                            f"https://api.telegram.org/bot{token}/sendMessage",
+                            json={"chat_id": cid, "text": (texte or "")[:4000]},
+                        )
+                    if (image_path or "").strip():
+                        p = Path(str(image_path).strip())
+                        if not p.is_file():
+                            return f"Erreur: image introuvable {image_path}"
+                        with open(p, "rb") as f:
+                            await client.post(
+                                f"https://api.telegram.org/bot{token}/sendPhoto",
+                                data={"chat_id": cid, "caption": (texte or "")[:1024]},
+                                files={"photo": (p.name, f, "image/jpeg")},
+                            )
+            return f"Envoye a {len(chat_ids)} chat(s) Telegram"
+        import asyncio
+        return asyncio.run(_envoyer())
+    except Exception as exc:
+        return f"Erreur envoi Telegram: {exc}"

@@ -83,6 +83,13 @@ EDIT_IMAGE_HINTS = re.compile(
     r"motif|paquet|design|logo|texture)\b",
     re.IGNORECASE,
 )
+# ENVOYER sur Telegram (texte ou image) :
+# verbe d'envoi + mention de Telegram/Telegram.
+TELEGRAM_SEND_HINTS = re.compile(
+    r"\b(?:envoie|envoi|transmet|transmets|partage|partager)\b[^.?!]{0,80}\b"
+    r"(?:telegram|telegramme|tg)\b",
+    re.IGNORECASE,
+)
 # GENERER une image nouvelle (IA locale).
 GEN_IMAGE_HINTS = re.compile(
     r"\b(g[ée]n[eè]re[rz]?|g[ée]n[eè]ration|cr[ée]e[rz]?|dessine|dessiner|"
@@ -174,11 +181,12 @@ def _llm_intention(message: str) -> str:
         "une livree ou une deco, recolorer, changer le fond, ajouter ou "
         "enlever un element sur une image deja la)\n"
         "- generer_image : il veut faire CREER/DESSINER une nouvelle image\n"
-        "- 3d : conception 3D, piece, STL, impression 3D, modélisation\n"
+        "- envoyer_telegram : il veut ENVOYER un message ou une image sur Telegram\n"
+        "- 3d : conception 3D, piece, STL, impression 3D, modelisation\n"
         "- autre : tout le reste (question, code, discussion...)\n"
         f"Demande : {message[:300]}\n"
         "Reponds UNIQUEMENT par un mot : voir_image, modifier_image, "
-        "generer_image, 3d ou autre."
+        "generer_image, envoyer_telegram, 3d ou autre."
     )
     try:
         body = _json.dumps({
@@ -225,6 +233,10 @@ def route_agent(message: str) -> tuple[str, str]:
             "pas de generation IA)"
         )
 
+    # Envoi Telegram (doit passer AVANT generer_image et modifier_image)
+    if TELEGRAM_SEND_HINTS.search(msg):
+        return "image", "intention=envoyer_telegram (envoi Telegram)"
+
     # 2. MODIFIER une image existante (edition : la base existe deja,
     #    edit_image doit etre utilise, pas une regeneration complete).
     if EDIT_IMAGE_HINTS.search(msg):
@@ -254,6 +266,8 @@ def route_agent(message: str) -> tuple[str, str]:
             return "image", "intention=modifier_image (classifieur LLM)"
         if intention == "generer_image":
             return "image", "intention=generer_image (classifieur LLM)"
+        if intention == "envoyer_telegram":
+            return "image", "intention=envoyer_telegram (classifieur LLM)"
         if intention == "3d":
             return "cad3d", "intention=3d (classifieur LLM)"
 

@@ -1,5 +1,6 @@
 import uuid
 from pathlib import Path
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, UploadFile
 
@@ -132,3 +133,38 @@ async def search_documents(req: SearchRequest) -> dict:
     except OllamaError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"results": search(vec, top_k=max(1, min(req.top_k, 20)))}
+
+
+class FicheOut(BaseModel):
+    id: int
+    titre: str
+    categorie: str
+    resume: str
+    contenu_md: str
+    image_path: str
+    source: str
+    created_at: str
+    updated_at: str
+
+
+@router.get("/fiches")
+async def list_fiches() -> dict:
+    db = get_db()
+    rows = db.query_all("SELECT * FROM fiches ORDER BY updated_at DESC")
+    return {"fiches": rows}
+
+
+@router.get("/fiches/{fiche_id}")
+async def get_fiche(fiche_id: int) -> dict:
+    db = get_db()
+    row = db.query_one("SELECT * FROM fiches WHERE id=?", (fiche_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Fiche non trouvee")
+    return dict(row)
+
+
+@router.delete("/fiches/{fiche_id}")
+async def delete_fiche(fiche_id: int) -> dict:
+    db = get_db()
+    db.execute("DELETE FROM fiches WHERE id=?", (fiche_id,))
+    return {"deleted": fiche_id}

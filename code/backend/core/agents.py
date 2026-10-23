@@ -136,6 +136,11 @@ BUILTIN_AGENTS: list[Agent] = [
             "... ») : cite-les mot pour mot.\n"
             "- Si aucun outil n'a tourné, ne dis JAMAIS qu'une image est "
             "prête et ne cite AUCUN chemin : appelle les outils d'abord.\n\n"
+            "ENVOI TELEGRAM :\n"
+            "- Si l'utilisateur demande d'envoyer un message ou une image sur Telegram, "
+            "utilise l'outil envoyer_telegram(texte, image_path).\n"
+            "- L'outil enverra le message et/ou l'image a tous les chats Telegram connectes.\n"
+            "- image_path optionnel : chemin absolu d'une image deja generee ou telechargee.\n\n"
             "Règles communes :\n"
             "1. Une seule génération pour une demande simple.\n"
             "2. Termine en donnant le chemin du fichier produit/telecharge.\n"
@@ -145,7 +150,8 @@ BUILTIN_AGENTS: list[Agent] = [
         ),
         tools=["generate_image", "edit_image", "analyze_image",
                "find_reference_image", "image_search", "fetch_image",
-               "web_search", "web_fetch", "calculator", "get_datetime"],
+               "web_search", "web_fetch", "calculator", "get_datetime",
+               "envoyer_telegram"],
         rag=False,
         role="agent_brain",
     ),

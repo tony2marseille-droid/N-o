@@ -20,7 +20,7 @@ from backend.tools.t_blender import tool_blender_render, tool_blender_run
 from backend.tools.t_docs import tool_document_create
 from backend.tools.t_extra import (tool_convertir_image, tool_memoire_ajouter,
     tool_notes, tool_presse_papiers, tool_rechercher_fichiers,
-    tool_telecharger_fichier)
+    tool_telecharger_fichier, tool_envoyer_telegram)
 from backend.tools.t_systeme import (tool_capture_ecran, tool_meteo,
     tool_open_app, tool_system_stats, tool_volume)
 
@@ -159,6 +159,25 @@ TOOL_DEFINITIONS: dict[str, dict] = {
         },
         "function": lambda args: tool_telecharger_fichier(
             args["url"], str(args.get("destination", ""))
+        ),
+    },
+    "envoyer_telegram": {
+        "level": "USER",
+        "description": (
+            "Envoie un message et/ou une image sur le(s) chat(s) Telegram connectes "
+            "au bot configure (token dans settings). Si aucun chat actif, retour erreur.\n\n"
+            "texte : message a envoyer (max 4000 car). image_path : chemin absolu d'une "
+            "image locale a joindre (optionnel). Au moins l'un des deux requis."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "texte": {"type": "string", "description": "message a envoyer"},
+                "image_path": {"type": "string", "description": "chemin absolu image a joindre"}
+            }
+        },
+        "function": lambda args: tool_envoyer_telegram(
+            args.get("texte", ""), args.get("image_path", "")
         ),
     },
     "calculator": {
