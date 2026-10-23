@@ -120,7 +120,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     async def health() -> dict:
-        return {"status": "ok", "app": APP_NAME, "version": APP_VERSION}
+        return {"status": "ok", "app": APP_NAME, "version": APP_VERSION, "build": "20261023-fix"}
 
     dist = settings.frontend_dist
     index_file = dist / "index.html"
@@ -129,6 +129,10 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}", include_in_schema=False)
         async def spa(full_path: str):
+            # Exclude API paths - let API routers handle them
+            if full_path.startswith("api/"):
+                from fastapi import HTTPException
+                raise HTTPException(status_code=404, detail="Not found")
             candidate = dist / full_path
             if full_path and candidate.is_file():
                 return FileResponse(candidate)
