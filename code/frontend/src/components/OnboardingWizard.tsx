@@ -51,6 +51,8 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
   const [installs, setInstalls] = useState<Record<string, InstallState>>({});
   const [messages, setMessages] = useState<Record<string, string>>({});
   const [interets, setInterets] = useState<string[]>([]);
+  const [webUser, setWebUser] = useState("");
+  const [displayName, setDisplayName] = useState("");
 
   const texte = useCallback((key: string) => t(lang, key), [lang]);
 
@@ -114,12 +116,18 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
       await sendJSON("/api/settings", "PUT", { key: "onboarded", value: "1" });
       await sendJSON("/api/settings", "PUT", { key: "auto_learn", value: "1" });
       await sendJSON("/api/settings", "PUT", { key: "interests", value: JSON.stringify(interets) });
+      if (webUser.trim()) {
+        await sendJSON("/api/settings", "PUT", { key: "web_user", value: webUser.trim() });
+      }
+      if (displayName.trim()) {
+        await sendJSON("/api/settings", "PUT", { key: "display_name", value: displayName.trim() });
+      }
       toast("Néo est prêt", "success");
       onDone(lang);
     } catch (err) {
       toast(`Enregistrement impossible : ${err}`, "error");
     }
-  }, [lang, interets, onDone, toast]);
+  }, [lang, interets, webUser, displayName, onDone, toast]);
 
   const passer = useCallback(async () => {
     try {
@@ -141,7 +149,7 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
             <p>{texte("onboarding.subtitle")}</p>
           </div>
           <span className="onboarding-step">
-            {texte("onboarding.step")} {step}/4
+            {texte("onboarding.step")} {step}/5
           </span>
         </div>
 
@@ -294,6 +302,51 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
         )}
 
         {step === 4 && (
+          <div className="onboarding-body">
+            <h2>{texte("onboarding.webAccessStep")}</h2>
+            <p className="onboarding-note">
+              {texte("onboarding.webAccessHint")}
+            </p>
+            <div style={{ marginTop: 16 }}>
+              <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
+                {texte("onboarding.webAccessTitle")}
+              </label>
+              <input
+                type="text"
+                placeholder={texte("onboarding.webAccessPlaceholder")}
+                value={webUser}
+                onChange={(e) => setWebUser(e.target.value)}
+                style={{ width: "100%", padding: "10px", fontSize: 14, border: "1px solid var(--border)", borderRadius: 6 }}
+                maxLength={32}
+              />
+              <p className="onboarding-note" style={{ marginTop: 6 }}>
+                {texte("onboarding.webAccessHint")}
+              </p>
+              <label style={{ display: "block", marginTop: 16, marginBottom: 8, fontWeight: 500 }}>
+                {texte("onboarding.userName")}
+              </label>
+              <input
+                type="text"
+                placeholder={texte("onboarding.userNamePlaceholder")}
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                style={{ width: "100%", padding: "10px", fontSize: 14, border: "1px solid var(--border)", borderRadius: 6 }}
+                maxLength={32}
+              />
+              <p className="onboarding-note" style={{ marginTop: 6 }}>
+                {texte("onboarding.userNameHint")}
+              </p>
+            </div>
+            <div className="onboarding-actions">
+              <button onClick={() => setStep(3)}>◂</button>
+              <button className="primary" onClick={() => setStep(5)}>
+                {texte("onboarding.continue")} ▸
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 5 && (
           <div className="onboarding-body">
             <div className="onboarding-ready">
               <div className="core-dot" />

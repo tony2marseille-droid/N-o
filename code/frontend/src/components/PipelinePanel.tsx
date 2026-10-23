@@ -89,7 +89,9 @@ export default function PipelinePanel({ agent, model, etaMs, steps, streaming }:
   const [secondes, setSecondes] = useState(0);
 
   useEffect(() => {
-    const cible = `pipeline · agent:${agent || "auto"} · modèle:${model || "auto"}`;
+    const cible = agent
+      ? `Néo · ${agent}${model ? ` · ${model}` : ""}`
+      : "Néo";
     let i = 0;
     const id = setInterval(() => {
       i += 1;
@@ -114,8 +116,8 @@ export default function PipelinePanel({ agent, model, etaMs, steps, streaming }:
   const secondesEta = etaMs ? Math.round(etaMs / 1000) : null;
   const enCours = steps.filter((s) => !s.done).length;
   const phase = enCours > 0
-    ? `exécution : ${steps[steps.length - 1].name}${steps[steps.length - 1].args ? " " + resumeArgs(steps[steps.length - 1].args) : ""}`
-    : `${model || "modèle"} génère la réponse`;
+    ? `Néo fait appel à « ${steps[steps.length - 1].name} »${steps[steps.length - 1].args ? " " + resumeArgs(steps[steps.length - 1].args) : ""}`
+    : `Néo génère la réponse`;
 
   return (
     <div className="pipeline-panel">

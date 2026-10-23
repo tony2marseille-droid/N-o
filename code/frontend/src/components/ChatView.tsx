@@ -58,7 +58,7 @@ function renderContent(text: string) {
     (_m, label: string, url: string) => {
       if (/\.(png|jpe?g|webp)(\?.*)?$/i.test(url)) {
         const chemin = decodeURIComponent(url.replace(/^file:\/\/\/?/i, ""));
-        return `<img class="msg-image" alt="${label}" src="/api/sd/file?path=${encodeURIComponent(chemin)}" />`;
+        return `<img class="msg-image" alt="${label}" src="/api/sd/file?path=${encodeURIComponent(chemin)}" onclick="window.dispatchEvent(new CustomEvent('open-fullscreen', {detail:{src:'/api/sd/file?path=${encodeURIComponent(chemin)}',alt:'${label}'}}))" />`;
       }
       return `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`;
     }
@@ -73,7 +73,7 @@ function renderContent(text: string) {
     .replace(
       /\b((?:[A-Za-z]:\\|data[/\\]|workspace[/\\])[^\s<>"'`*]+?\.(?:png|jpe?g|webp))\b/gi,
       (_m, p: string) =>
-        `<img class="msg-image" alt="image" src="/api/sd/file?path=${encodeURIComponent(p)}" />`
+        `<img class="msg-image" alt="image" src="/api/sd/file?path=${encodeURIComponent(p)}" onclick="window.dispatchEvent(new CustomEvent('open-fullscreen', {detail:{src:'/api/sd/file?path=${encodeURIComponent(p)}',alt:'image'}}))" />`
     );
   const parts = styled.split(/(<a [^>]*>.*?<\/a>)/g);
   return parts.map((part, i) => {
@@ -113,6 +113,8 @@ export default function ChatView({
   const { images: pendingImages, dragging, attachFiles, remove, clear, dragProps } = useImageAttach();
   const [prompts, setPrompts] = useState<{ id: number; name: string; content: string }[]>([]);
   const [autoTts, setAutoTts] = useState(false);
+  // Fullscreen image modal
+  const [fullscreenImage, setFullscreenImage] = useState<{ src: string; alt: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -152,6 +154,16 @@ export default function ChatView({
     getJSON<{ settings: Record<string, string> }>("/api/settings")
       .then((d) => setAutoTts(d.settings.tts_autoplay === "1"))
       .catch(() => undefined);
+  }, []);
+
+  // Fullscreen image modal event listener
+  useEffect(() => {
+    const handler = (e: CustomEvent) => {
+      const { src, alt } = e.detail;
+      if (src) setFullscreenImage({ src, alt: alt || "image" });
+    };
+    window.addEventListener("open-fullscreen", handler as EventListener);
+    return () => window.removeEventListener("open-fullscreen", handler as EventListener);
   }, []);
 
   useEffect(() => {
@@ -675,7 +687,7 @@ export default function ChatView({
       <div className="messages">
         {messages.length === 0 && (
           <div className="empty-state">
-            <div className="big">Bienvenue sur LocalAI</div>
+            <div className="big">Bienvenue dans la Matrice</div>
             <div>100% local — aucun envoi sur internet.</div>
             <div>Mode Auto : le modèle est choisi selon votre demande.</div>
           </div>
@@ -830,6 +842,43 @@ export default function ChatView({
           Envoyer
         </button>
       </div>
+      {/* ---------- Fullscreen Image Modal ---------- */}
+      {fullscreenImage && (
+        <div
+          className="fullscreen-modal"
+          onClick={() => setFullscreenImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image en plein écran"
+        >
+          <div
+            className="fullscreen-content"
+            onClick={(e) => e.stopPropagation()}
+            onWheel={(e) => {
+              e.preventDefault();
+              setFullscreenImage((prev) =>
+                prev
+                  ? { ...prev, src: prev.src }
+                  : null
+              );
+            }}
+          >
+            <button
+              className="fs-close"
+              onClick={() => setFullscreenImage(null)}
+              aria-label="Fermer"
+            >
+              ✕
+            </button>
+            <img
+              src={fullscreenImage.src}
+              alt={fullscreenImage.alt}
+              className="fs-image"
+            />
+            <div className="fs-caption">{fullscreenImage.alt}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

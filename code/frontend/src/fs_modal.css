@@ -1,0 +1,81 @@
+/* ---------- Fullscreen Image Modal ---------- */
+.fullscreen-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.95);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fs-fade-in 0.2s ease-out;
+  cursor: zoom-out;
+}
+
+@keyframes fs-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fullscreen-content {
+  position: relative;
+  max-width: 95vw;
+  max-height: 95vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: default;
+}
+
+.fs-close {
+  position: absolute;
+  top: -50px;
+  right: -10px;
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border-radius: 50%;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, transform 0.2s;
+  z-index: 10;
+}
+.fs-close:hover {
+  background: rgba(229, 72, 77, 0.9);
+  transform: scale(1.1);
+}
+
+.fs-image {
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+  image-rendering: crisp-edges;
+  touch-action: none;
+}
+
+.fs-caption {
+  margin-top: 12px;
+  color: var(--text-faint);
+  font-size: 13px;
+  text-align: center;
+  max-width: 90vw;
+  word-break: break-word;
+}
+
+/* Zoom cursor hints */
+.fullscreen-modal {
+  cursor: zoom-out;
+}
+.fullscreen-content:not(:hover) .fs-image {
+  cursor: zoom-in;
+}
+.fullscreen-content:hover .fs-image {
+  cursor: zoom-out;
+}

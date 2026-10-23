@@ -87,10 +87,10 @@ EDIT_IMAGE_HINTS = re.compile(
 GEN_IMAGE_HINTS = re.compile(
     r"\b(g[ée]n[eè]re[rz]?|g[ée]n[eè]ration|cr[ée]e[rz]?|dessine|dessiner|"
     r"fais[- ]moi\s+(?:une\s+)?(?:image|deco|d[ée]co|affiche|illustration|vignette|"
-    r"banni[eè]re|avatar|sticker|visuel|fond|wallpaper|logo)|"
-    r"une?\s+(?:image|illustration|affiche|deco|d[ée]co)\s+(?:de|du|des|sur|th[eè]me))\b"
-    r"[^.?!]{0,60}\b(image|images|png|jpg|photo|dessin|affiche|illustration|"
-    r"vignette|banni[eè]re|avatar|sticker|visuel|fond|wallpaper|logo|deco|d[ée]co)\b",
+    r"banni[eè]re|avatar|sticker|visuel|fond|wallpaper|logo|objet|paquet|produit)|"
+    r"une?\s+(?:image|illustration|affiche|deco|d[ée]co|objet|paquet|produit)\s+(?:de|du|des|sur|th[eè]me))\b"
+    r"[^.?!]{0,120}\b(image|images|png|jpg|photo|dessin|affiche|illustration|"
+    r"vignette|banni[eè]re|avatar|sticker|visuel|fond|wallpaper|logo|deco|d[ée]co|objet|paquet|produit)\b",
     re.IGNORECASE,
 )
 IMAGE_TOPIC_HINTS = re.compile(

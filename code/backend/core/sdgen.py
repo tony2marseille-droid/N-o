@@ -124,6 +124,23 @@ def _resolution_defaut(m: Path | None = None) -> int:
         _type_modele(m), 512)
 
 
+def _estimer_temps_generation(t: str, resolution: str, largeur: int, hauteur: int,
+                              steps: int, kontext_actif: bool) -> str:
+    """Estime le temps de generation en secondes (approx)."""
+    base = {"flux": 1.0, "turbo": 0.6, "sdxl": 1.2, "sd15": 0.8}.get(t, 1.0)
+    pixels = (largeur * hauteur) / (1024 * 1024)  # Mpix
+    steps_factor = steps / 28.0
+    resolution_factor = 1.0 if resolution != "4k" else 4.0  # upscale x4
+    kontext_factor = 2.0 if kontext_actif else 1.0
+    est = base * pixels * steps_factor * resolution_factor * kontext_factor * 60
+    if est < 30:
+        return f"~{int(est)}s (rapide)"
+    elif est < 300:
+        return f"~{int(est/60)}min {int(est%60)}s"
+    else:
+        return f"~{int(est/60)}min"
+
+
 def status() -> dict:
     exe = _exe()
     modele = _modele()
@@ -264,7 +281,20 @@ def _resize_lanczos(src: Path, dst: Path, largeur: int, hauteur: int) -> bool:
 
         im = Image.open(src).convert("RGB")
         im.thumbnail((largeur, hauteur), Image.LANCZOS)
-        im.save(dst, format="PNG")
+        fmt = dst.suffix.lower().lstrip(".")
+        if fmt == "jpg":
+            fmt = "JPEG"
+        elif fmt == "webp":
+            fmt = "WEBP"
+        else:
+            fmt = "PNG"
+        save_kwargs = {"format": fmt}
+        if fmt == "JPEG":
+            save_kwargs["quality"] = 92
+        elif fmt == "WEBP":
+            save_kwargs["quality"] = 90
+            save_kwargs["method"] = 6
+        im.save(dst, **save_kwargs)
         return dst.is_file()
     except Exception:
         return False
@@ -591,14 +621,18 @@ def _generer_nolock(
 
     kontext_actif = ref_ok and t == "flux" and "kontext" in modele.name.lower()
 
+    # Estimation temps selon modèle (pour info utilisateur)
+    temps_estime = _estimer_temps_generation(t, resolution, largeur, hauteur, steps, kontext_actif)
+
     # Cible 4K : base 16:9 adaptee au modele puis upscale x4 -> 3840x2160.
-    if resolution == "4k" and out_final.suffix.lower() == ".png":
+    # Autorise pour tout format de sortie (PNG, JPEG, WEBP) : upscale en PNG
+    # intermediaire puis conversion au format final.
+    if resolution == "4k":
         if t in ("sdxl", "flux"):
             largeur, hauteur = 1344, 768
         else:
             largeur, hauteur = 1024, 576
         if kontext_actif:
-            # Chaine en 2 passes : base 16:9 (l'upscale apporte le detail).
             largeur, hauteur = 1280, 720
         out = out_final.with_name(out_final.stem + "_base.png")
 
@@ -777,5 +811,6 @@ def _generer_nolock(
     ko = out.stat().st_size // 1024
     return (
         f"Image generee: {out} ({ko} Ko) "
-        f"[{st['type']}, {steps} steps, {dims}]"
+        f"[{st['type']}, {steps} steps, {dims}] "
+        f"[temps estime: {temps_estime}]"
     )

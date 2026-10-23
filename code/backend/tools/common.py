@@ -40,14 +40,24 @@ def _est_sous(chemin: Path, racine: Path) -> bool:
         return False
 
 
+def _default_root() -> Path:
+    """Racine par defaut selon l'OS (Windows: E:\\ia, Linux: /opt/localai ou ~/.localai)."""
+    if os.name == "nt":
+        return Path(os.environ.get("LOCALAI_ROOT", r"E:\ia"))
+    # Linux/macOS : /opt/localai (si root) ou ~/.localai (utilisateur)
+    if os.geteuid() == 0:
+        return Path("/opt/localai")
+    return Path.home() / ".localai"
+
+
 def _sandbox_cfg() -> dict:
     regles = charger_regles()
-    racine = os.environ.get("LOCALAI_ROOT", r"E:\ia")
+    racine = _default_root()
     return {
-        "root": Path(regles.get("sandbox_root", str(Path(racine) / "workspace"))),
+        "root": Path(regles.get("sandbox_root", str(racine / "workspace"))),
         "read_roots": [Path(p) for p in regles.get(
             "sandbox_read_roots",
-            [str(Path(racine) / "workspace"), str(Path(racine) / "data" / "documents")])],
+            [str(racine / "workspace"), str(racine / "data" / "documents")])],
         "cmd_allow": [a.lower() for a in regles.get("cmd_allow", _CMD_ALLOW_DEFAULT)],
         "cmd_deny": [d.lower() for d in regles.get("cmd_deny", _CMD_DENY_DEFAULT)],
         "timeout_s": int(regles.get("timeout_s", 60)),
@@ -103,23 +113,37 @@ html_unescape = _html_unescape
 
 _OPENCAD_PATHS = [
     os.environ.get("LOCALAI_OPENCAD", ""),
-    str(Path(os.environ.get("LOCALAI_ROOT", r"E:\ia")) / "tools" / "OpenSCAD" / "openscad-2021.01" / "openscad.exe"),
+    str(_default_root() / "tools" / "OpenSCAD" / "openscad-2021.01" / "openscad"),
+    "/usr/bin/openscad",
+    "/usr/local/bin/openscad",
+    "/opt/openscad/bin/openscad",
     r"C:\Program Files\OpenSCAD\openscad.exe",
     r"C:\Program Files (x86)\OpenSCAD\openscad.exe",
 ]
 _SLICER_PATHS = {
     "prusa": [
+        os.environ.get("LOCALAI_PRUSA", ""),
+        "/usr/bin/prusa-slicer-console",
+        "/usr/bin/prusa-slicer",
         r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer-console.exe",
         r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer.exe",
     ],
     "orca": [
+        os.environ.get("LOCALAI_ORCA", ""),
+        "/usr/bin/orca-slicer-console",
+        "/usr/bin/orca-slicer",
         r"C:\Program Files\OrcaSlicer\orca-console.exe",
         r"C:\Program Files\OrcaSlicer\orca-slicer.exe",
     ],
     "cura": [
+        os.environ.get("LOCALAI_CURA", ""),
+        "/usr/bin/CuraEngine",
         r"C:\Program Files\Ultimaker Cura 5*\CuraEngine.exe",
     ],
     "bambu": [
+        os.environ.get("LOCALAI_BAMBU", ""),
+        "/usr/bin/bambu-studio-console",
+        "/usr/bin/bambu-studio",
         r"C:\Program Files\Bambu Studio\bambu-studio-console.exe",
         r"C:\Program Files\Bambu Studio\BambuStudio.exe",
     ],

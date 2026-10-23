@@ -23,6 +23,8 @@ const CAT_LABELS: Record<string, string> = {
   loisirs: "Loisirs",
   science: "Science",
   autre: "Autre",
+  photos_generees: "Photos générées",
+  modeles_3d: "Modèles 3D",
 };
 
 const CAT_DESCS: Record<string, string> = {
@@ -36,6 +38,8 @@ const CAT_DESCS: Record<string, string> = {
   loisirs: "Loisirs, jeux et passions.",
   science: "Sciences expliquées simplement.",
   autre: "Documents divers.",
+  photos_generees: "Images générées par Néo (FLUX, Kontext, etc.).",
+  modeles_3d: "Modèles 3D et projets créés par Néo (STL, OpenSCAD, etc.).",
 };
 
 export default function DocumentsView({ toast }: Props) {

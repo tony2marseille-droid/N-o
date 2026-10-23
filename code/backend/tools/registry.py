@@ -694,6 +694,30 @@ def ollama_tool_specs(names: list[str]) -> list[dict]:
 
 
 
+def _resolve_workspace_paths(args: dict) -> dict:
+    """Remplace {WORKSPACE_IMAGES} par le chemin reel du dossier images."""
+    import os
+    from pathlib import Path
+    workspace_root = os.environ.get("LOCALAI_ROOT")
+    if not workspace_root:
+        import os as _os
+        if os.name == "nt":
+            workspace_root = r"E:\ia"
+        else:
+            if os.geteuid() == 0:
+                workspace_root = "/opt/localai"
+            else:
+                workspace_root = str(Path.home() / ".localai")
+    images_dir = str(Path(workspace_root) / "workspace" / "images")
+    resolved = {}
+    for k, v in args.items():
+        if isinstance(v, str) and "{WORKSPACE_IMAGES}" in v:
+            resolved[k] = v.replace("{WORKSPACE_IMAGES}", str(Path(workspace_root) / "workspace" / "images"))
+        else:
+            resolved[k] = v
+    return resolved
+
+
 def execute_tool(name: str, arguments: dict, permissions: PermissionManager) -> str:
     tool = TOOL_DEFINITIONS.get(name)
     if tool is None:
@@ -702,6 +726,8 @@ def execute_tool(name: str, arguments: dict, permissions: PermissionManager) -> 
         permissions.check(tool["level"])
     except PermissionDenied as exc:
         return f"PERMISSION REFUSEE: {exc}"
+    # Resout les placeholders de chemins workspace
+    arguments = _resolve_workspace_paths(arguments)
     try:
         resultat = str(tool["function"](arguments))[:6000]
     except Exception as exc:

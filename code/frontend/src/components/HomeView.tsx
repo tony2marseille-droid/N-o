@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import MatrixRain from "./MatrixRain";
 import type { ModelEntry, SystemInfo } from "../lib/api";
-import { getJSON } from "../lib/api";
+import { getJSON, sendJSON } from "../lib/api";
 import { type Lang, t } from "../lib/i18n";
 
 type Vue =
@@ -144,12 +144,16 @@ export default function HomeView({ onView, onNewChat, systemInfo, models, lang }
   const [feedback, setFeedback] = useState<FeedbackResp | null>(null);
   const [vocal, setVocal] = useState<VoiceStatus | null>(null);
   const [agents, setAgents] = useState<AgentDef[]>([]);
+  const [imageFormat, setImageFormat] = useState("png");
 
   useEffect(() => {
     getJSON<ReglesResp>("/api/selfimprove/rules").then(setRegles).catch(() => undefined);
     getJSON<FeedbackResp>("/api/feedback/stats").then(setFeedback).catch(() => undefined);
     getJSON<VoiceStatus>("/api/voice/status").then(setVocal).catch(() => undefined);
     getJSON<{ agents: AgentDef[] }>("/api/agents").then((a) => setAgents(a.agents)).catch(() => undefined);
+    getJSON<{ settings: Record<string, string> }>("/api/settings")
+      .then((d) => setImageFormat(d.settings?.image_format ?? "png"))
+      .catch(() => undefined);
   }, []);
 
   const gpu = systemInfo?.gpus[0];
@@ -322,7 +326,7 @@ export default function HomeView({ onView, onNewChat, systemInfo, models, lang }
               <span>Pont /api/outil (jobs)</span>
               <span className="hud-strong">actif</span>
             </div>
-            <div style={{ marginTop: 12, borderTop: "1px solid var(--border, #1d2a20)", paddingTop: 8 }}>
+<div style={{ marginTop: 12, borderTop: "1px solid var(--border, #1d2a20)", paddingTop: 8 }}>
               <div className="hud-label" style={{ marginBottom: 6 }}>
                 Socles & niveaux (estimation taille + capacités + fine-tune)
               </div>
@@ -350,9 +354,31 @@ export default function HomeView({ onView, onNewChat, systemInfo, models, lang }
                     </span>
                   </div>
                 ))}
+              </div>
+
+              <div style={{ marginTop: 14, borderTop: "1px solid var(--border, #1d2a20)", paddingTop: 8 }}>
+                <div className="hud-label" style={{ marginBottom: 6 }}>
+                  {texte("home.imageFormat")}
+                </div>
+                <p style={{ color: "var(--text-dim)", fontSize: 11.5, marginBottom: 8 }}>
+                  {texte("home.imageFormatHint")}
+                </p>
+                <select
+                  value={imageFormat}
+                  onChange={(e) => {
+                    const fmt = e.target.value;
+                    setImageFormat(fmt);
+                    void sendJSON("/api/settings", "PUT", { key: "image_format", value: fmt });
+                  }}
+                  style={{ width: "100%", padding: "8px 10px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text)" }}
+                >
+                  <option value="png">PNG (sans perte, défaut)</option>
+                  <option value="jpeg">JPEG (compressé, plus léger)</option>
+                  <option value="webp">WebP (moderne, bon compromis)</option>
+                </select>
+              </div>
             </div>
           </div>
-        </div>
 
         {/* ---------- Actions rapides ---------- */}
         <div className="home-actions">

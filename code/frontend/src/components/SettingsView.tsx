@@ -383,6 +383,36 @@ export default function SettingsView({
             </label>
           </div>
 
+          {/* Accès Web / Identité */}
+          <div className="panel">
+            <h3>{texte("settings.webAccess")}</h3>
+            <p style={{ color: "var(--text-dim)", fontSize: 12.5, marginTop: 0 }}>
+              {texte("settings.webUserHint")}
+            </p>
+            <div className="settings-row">
+              <label>{texte("settings.webUser")}</label>
+              <input
+                type="text"
+                placeholder={texte("settings.webUserPlaceholder")}
+                value={settings.web_user ?? ""}
+                onChange={(e) => void save("web_user", e.target.value)}
+                maxLength={32}
+                pattern="[a-zA-Z0-9-]+"
+                title="Lettres, chiffres, tirets uniquement"
+              />
+            </div>
+            <div className="settings-row">
+              <label>{texte("settings.displayName")}</label>
+              <input
+                type="text"
+                placeholder={texte("settings.displayNamePlaceholder")}
+                value={settings.display_name ?? ""}
+                onChange={(e) => void save("display_name", e.target.value)}
+                maxLength={32}
+              />
+            </div>
+          </div>
+
           {/* Voix */}
           <div className="panel">
             <h3>{texte("settings.voice")}</h3>
