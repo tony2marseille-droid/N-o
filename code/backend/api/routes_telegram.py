@@ -5,7 +5,7 @@ from datetime import datetime
 
 import httpx
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.api.routes_settings import get_setting
 from backend.core.database import get_db
@@ -255,3 +255,68 @@ async def telegram_check() -> dict:
         return {"ok": False, "error": data.get("description", "erreur")}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+class TelegramSendRequest(BaseModel):
+    text: str = ""
+    images: list[str] = Field(default_factory=list)
+    chat_id: int | None = None
+
+
+@router.post("/send")
+async def telegram_send(req: TelegramSendRequest) -> dict:
+    """Envoi manuel depuis l'interface web : texte + images generees."""
+    from pathlib import Path
+
+    from backend.core.security import verifier_acces
+
+    token = _token()
+    if not token:
+        return {"ok": False, "error": "token absent"}
+    if not _enabled():
+        return {"ok": False, "error": "telegram desactive"}
+    if not req.text.strip() and not req.images:
+        return {"ok": False, "error": "rien a envoyer"}
+    chat_id = req.chat_id
+    if chat_id is None:
+        row = get_db().query_one(
+            "SELECT chat_id FROM telegram_sessions ORDER BY created_at DESC LIMIT 1"
+        )
+        chat_id = row["chat_id"] if row else None
+    if chat_id is None:
+        return {"ok": False, "error": "aucune session telegram (envoyez /start au bot)"}
+    envoyes = 0
+    images_ok = 0
+    async with httpx.AsyncClient(timeout=60) as client:
+        if req.text.strip():
+            try:
+                await _send(token, chat_id, req.text)
+                envoyes += 1
+            except Exception as exc:
+                return {"ok": False, "error": f"sendMessage: {exc}"}
+        for chemin in req.images[:10]:
+            p = Path(chemin).resolve()
+            if verifier_acces(str(p)) or not p.is_file():
+                continue
+            if p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+                continue
+            if p.stat().st_size > 50_000_000:
+                continue
+            with open(p, "rb") as fic:
+                if p.stat().st_size <= 10_000_000:
+                    r = await client.post(
+                        f"https://api.telegram.org/bot{token}/sendPhoto",
+                        files={"photo": (p.name, fic, "image/png")},
+                        data={"chat_id": str(chat_id), "caption": "Envoye depuis Neo"},
+                    )
+                else:
+                    r = await client.post(
+                        f"https://api.telegram.org/bot{token}/sendDocument",
+                        files={"document": (p.name, fic, "image/png")},
+                        data={"chat_id": str(chat_id)},
+                    )
+            if r.status_code < 400:
+                images_ok += 1
+    if envoyes == 0 and images_ok == 0:
+        return {"ok": False, "error": "aucune image valide"}
+    return {"ok": True, "sent": envoyes, "images": images_ok}

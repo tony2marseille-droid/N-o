@@ -33,7 +33,7 @@ fn libelle_etape(nom: &str) -> Option<&'static str> {
     Some(libelle)
 }
 
-async fn envoyer_message(client: &reqwest::Client, token: &str, cid: i64, texte: &str) {
+pub async fn envoyer_message(client: &reqwest::Client, token: &str, cid: i64, texte: &str) {
     let _ = client
         .post(format!("https://api.telegram.org/bot{token}/sendMessage"))
         .json(&serde_json::json!({ "chat_id": cid, "text": texte.chars().take(4000).collect::<String>() }))
@@ -43,7 +43,7 @@ async fn envoyer_message(client: &reqwest::Client, token: &str, cid: i64, texte:
 
 /// Envoie une image locale sur Telegram : sendPhoto (<= 10 Mo) sinon
 /// sendDocument (jusqu'a 50 Mo, cas des images 4K).
-async fn envoyer_image(client: &reqwest::Client, token: &str, cid: i64, chemin: &str, legende: &str) {
+pub async fn envoyer_image(client: &reqwest::Client, token: &str, cid: i64, chemin: &str, legende: &str) {
     let meta = match tokio::fs::metadata(chemin).await {
         Ok(m) => m,
         Err(_) => return,

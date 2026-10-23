@@ -224,6 +224,46 @@ export default function ChatView({
     );
   }, [toast]);
 
+  const sendToTelegram = useCallback(async (content: string) => {
+    // Extraction des images du message (meme logique que renderContent) :
+    // liens markdown file:// + chemins locaux nus (E:\..., data\..., workspace\...).
+    const images: string[] = [];
+    const mdRe = /\[([^\]]{1,120})\]\((file:\/\/[^\s)]+)\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = mdRe.exec(content)) !== null) {
+      if (/\.(png|jpe?g|webp)(\?.*)?$/i.test(m[2])) {
+        const p = decodeURIComponent(m[2].replace(/^file:\/\//i, "").replace(/^\//, ""));
+        if (!images.some((x) => x.toLowerCase() === p.toLowerCase())) images.push(p);
+      }
+    }
+    const bareRe = /\b((?:[A-Za-z]:\\|data[\/\\]|workspace[\/\\])[^\s<>"'`*]+?\.(?:png|jpe?g|webp))\b/gi;
+    while ((m = bareRe.exec(content)) !== null) {
+      if (!images.some((x) => x.toLowerCase() === m![1].toLowerCase())) images.push(m[1]);
+    }
+    // Texte nettoye : sans balises d'images ni chemins bruts.
+    let text = content
+      .replace(/\[([^\]]{1,120})\]\(file:\/\/[^\s)]+\)/g, "$1")
+      .replace(/\b((?:[A-Za-z]:\\|data[\/\\]|workspace[\/\\])[^\s<>"'`*]+?\.(?:png|jpe?g|webp))\b/gi, "")
+      .trim();
+    try {
+      const resp = await fetch("/api/telegram/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, images }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (data.ok) {
+        const parts = [data.sent ? "message" : null, data.images ? `${data.images} image(s)` : null].filter(Boolean);
+        toast(parts.length ? `Envoyé sur Telegram ✓ (${parts.join(" + ")})` : "Envoyé sur Telegram ✓", "success");
+      } else {
+        toast(`Erreur : ${data.error}`, "error");
+      }
+    } catch (err) {
+      toast(`Telegram : ${err}`, "error");
+    }
+  }, [toast]);
+
   const exportMd = useCallback(async () => {
     if (!conversationId) return;
     try {
@@ -758,6 +798,13 @@ export default function ChatView({
                       onClick={() => copyMessage(m.content)}
                     >
                       ⧉
+                    </button>
+                    <button
+                      className="tts-btn"
+                      title="Envoyer sur Telegram"
+                      onClick={() => sendToTelegram(m.content)}
+                    >
+                      ✈
                     </button>
                     {i === messages.length - 1 && messages.some((x) => x.role === "user") && (
                       <button className="tts-btn" title="Régénérer la réponse" onClick={regenerate}>

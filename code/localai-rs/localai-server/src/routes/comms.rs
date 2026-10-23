@@ -11,6 +11,7 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/api/telegram/status", get(status))
         .route("/api/telegram/config", put(config))
         .route("/api/telegram/check", post(check))
+        .route("/api/telegram/send", post(send))
         .route("/api/livekit/status", get(lk_status))
         .route("/api/livekit/config", put(lk_config))
         .route("/api/livekit/token", get(lk_token).post(lk_token))
@@ -63,6 +64,83 @@ async fn check(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>>
     let url = format!("https://api.telegram.org/bot{token}/getMe");
     let r = reqwest::get(&url).await.map_err(localai_core::AppError::from)?;
     Ok(Json(json!({ "ok": r.status().is_success() })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TgSend {
+    pub text: Option<String>,
+    pub images: Option<Vec<String>>,
+    pub chat_id: Option<i64>,
+}
+
+/// Envoi manuel depuis l'interface web : POST /api/telegram/send
+/// { text, images?: [chemins], chat_id? } -> derniere session par defaut.
+async fn send(State(st): State<Arc<crate::AppState>>, Json(b): Json<TgSend>) -> ApiResult<Json<Value>> {
+    let token = st.db.get_setting("telegram_token", "");
+    if token.is_empty() {
+        return Ok(Json(json!({ "ok": false, "error": "pas de token configure" })));
+    }
+    if st.db.get_setting("telegram_enabled", "0") != "1" {
+        return Ok(Json(json!({ "ok": false, "error": "telegram desactive" })));
+    }
+    let text = b.text.unwrap_or_default();
+    let images = b.images.unwrap_or_default();
+    if text.trim().is_empty() && images.is_empty() {
+        return Ok(Json(json!({ "ok": false, "error": "rien a envoyer" })));
+    }
+    let cid = match b.chat_id {
+        Some(c) => Some(c),
+        None => st
+            .db
+            .query_one_json("SELECT chat_id FROM telegram_sessions ORDER BY created_at DESC LIMIT 1", &[])?
+            .and_then(|r| r.get("chat_id").and_then(|v| v.as_i64())),
+    };
+    let Some(cid) = cid else {
+        return Ok(Json(json!({ "ok": false, "error": "aucune session telegram (envoyez /start au bot)" })));
+    };
+    let client = reqwest::Client::new();
+    let mut envoyes = 0usize;
+    if !text.trim().is_empty() {
+        let texte: String = text.chars().take(4000).collect();
+        let r = client
+            .post(format!("https://api.telegram.org/bot{token}/sendMessage"))
+            .json(&json!({ "chat_id": cid, "text": texte }))
+            .send()
+            .await
+            .map_err(localai_core::AppError::from)?;
+        if !r.status().is_success() {
+            return Ok(Json(json!({ "ok": false, "error": format!("sendMessage HTTP {}", r.status()) })));
+        }
+        envoyes += 1;
+    }
+    // Images : garde-fou anti path-traversal (meme regle que /api/sd/file).
+    let root = st
+        .settings
+        .root_dir
+        .canonicalize()
+        .map_err(|e| ApiError(localai_core::AppError::Internal(format!("root: {e}"))))?;
+    let mut images_ok = 0usize;
+    for chemin in images.iter().take(10) {
+        let cand = root.join(chemin.trim_start_matches(['/', '\\'].as_slice()));
+        let Ok(canon) = cand.canonicalize() else { continue };
+        if !canon.starts_with(&root) || !canon.is_file() {
+            continue;
+        }
+        let ext_image = canon
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| matches!(e.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg" | "webp"))
+            .unwrap_or(false);
+        if !ext_image {
+            continue;
+        }
+        crate::telegram::envoyer_image(&client, &token, cid, &canon.to_string_lossy(), "Envoye depuis Neo").await;
+        images_ok += 1;
+    }
+    if envoyes == 0 && images_ok == 0 {
+        return Ok(Json(json!({ "ok": false, "error": "aucune image valide" })));
+    }
+    Ok(Json(json!({ "ok": true, "sent": envoyes, "images": images_ok })))
 }
 
 async fn lk_status(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {
