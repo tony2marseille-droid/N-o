@@ -1978,12 +1978,18 @@ html[data-theme="light"] .conv-item.selected {
   flex-direction: column;
   gap: 8px;
   padding: 14px 12px;
-  transform: translateX(-115%);
-  transition: transform 0.22s ease;
+  /* Ferme : TOTALEMENT hors champ. L'ancien translateX(-115%) ne
+     deportait que 345px depuis left:264px -> une bande restait
+     visible par-dessus la barre laterale (z-index 60). */
+  transform: translateX(calc(-100% - 280px));
+  visibility: hidden;
+  transition: transform 0.22s ease, visibility 0s linear 0.22s;
 }
 
 .history-panel.open {
   transform: translateX(0);
+  visibility: visible;
+  transition: transform 0.22s ease;
 }
 
 .history-head {
