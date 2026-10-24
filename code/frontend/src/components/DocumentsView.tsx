@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DocumentItem, SearchResult } from "../lib/api";
+import type { DocumentItem, NeoFile, SearchResult } from "../lib/api";
 import { getJSON, sendJSON } from "../lib/api";
 
 interface Props {
@@ -23,6 +23,7 @@ const CAT_LABELS: Record<string, string> = {
   loisirs: "Loisirs",
   science: "Science",
   autre: "Autre",
+  neo: "Néo",
   photos_generees: "Photos générées",
   modeles_3d: "Modèles 3D",
 };
@@ -38,6 +39,7 @@ const CAT_DESCS: Record<string, string> = {
   loisirs: "Loisirs, jeux et passions.",
   science: "Sciences expliquées simplement.",
   autre: "Documents divers.",
+  neo: "Photos, meshes et documents generes par Néo pendant le chat.",
   photos_generees: "Images générées par Néo (FLUX, Kontext, etc.).",
   modeles_3d: "Modèles 3D et projets créés par Néo (STL, OpenSCAD, etc.).",
 };
@@ -51,6 +53,7 @@ export default function DocumentsView({ toast }: Props) {
   const [nonClasses, setNonClasses] = useState(0);
   const [filtre, setFiltre] = useState("");
   const [analysing, setAnalysing] = useState(false);
+  const [neoFiles, setNeoFiles] = useState<NeoFile[]>([]);
   const [appr, setAppr] = useState<{ running: boolean; category: string; etape: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const fichesPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -134,6 +137,15 @@ export default function DocumentsView({ toast }: Props) {
       if (apprPollRef.current) clearInterval(apprPollRef.current);
     };
   }, [refresh, refreshFiches, refreshAppr]);
+
+  // Categorie "Neo" : fichiers generes par le chat (classement auto).
+  useEffect(() => {
+    if (filtre === "neo") {
+      getJSON<{ files: NeoFile[] }>("/api/documents/neo-files")
+        .then((d) => setNeoFiles(d.files ?? []))
+        .catch(() => setNeoFiles([]));
+    }
+  }, [filtre]);
 
   const analyser = useCallback(async () => {
     setAnalysing(true);
@@ -337,7 +349,7 @@ export default function DocumentsView({ toast }: Props) {
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
               <button
                 className="primary"
-                disabled={appr?.running ?? false}
+                disabled={(appr?.running ?? false) || filtre === "neo"}
                 onClick={() => void lancerApprentissage(filtre)}
               >
                 {appr?.running && appr.category === filtre ? "Néo apprend…" : "Lancer un apprentissage"}
@@ -350,7 +362,38 @@ export default function DocumentsView({ toast }: Props) {
                 </span>
               )}
             </div>
-            {docsFiltres.length === 0 && (
+            {filtre === "neo" && (
+              <div className="neo-file-grid">
+                {neoFiles.length === 0 && (
+                  <div style={{ color: "var(--text-faint)", fontSize: 12.5 }}>
+                    Aucun fichier genere pour l'instant. Demandez une image dans
+                    le chat, elle apparaitra ici.
+                  </div>
+                )}
+                {neoFiles.map((nf) => (
+                  <div key={nf.path} className="neo-file-card">
+                    <img
+                      src={`/api/sd/file?path=${encodeURIComponent(nf.path)}`}
+                      alt={nf.name}
+                      onClick={() =>
+                        window.dispatchEvent(
+                          new CustomEvent("open-fullscreen", {
+                            detail: {
+                              src: `/api/sd/file?path=${encodeURIComponent(nf.path)}`,
+                              alt: nf.name,
+                            },
+                          })
+                        )
+                      }
+                    />
+                    <div className="neo-file-meta" title={nf.path}>
+                      {nf.name} &mdash; {(nf.size_bytes / 1048576).toFixed(1)} Mo
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {filtre !== "neo" && docsFiltres.length === 0 && (
               <div style={{ color: "var(--text-faint)", fontSize: 12.5 }}>
                 Aucun document dans cette catégorie.
               </div>

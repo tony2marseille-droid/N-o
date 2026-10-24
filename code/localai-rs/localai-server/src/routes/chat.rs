@@ -244,6 +244,206 @@ fn corrige_chemins_image(full: &str, root: &std::path::Path, vivants: &[String])
     out
 }
 
+/// Reponse LOCALE en streaming AVEC compteurs de tokens. Utilisee par
+/// le chemin rapide et par la bascule de secours cloud -> local.
+#[allow(clippy::too_many_arguments)]
+fn spawn_reponse_locale(
+    tx: mpsc::UnboundedSender<String>,
+    db2: localai_core::db::Db,
+    ollama: localai_core::ollama::Ollama,
+    root2: std::path::PathBuf,
+    model2: String,
+    body: serde_json::Value,
+    cid: i64,
+) {
+    tokio::spawn(async move {
+        let started = std::time::Instant::now();
+        let txc = tx.clone();
+        let res = ollama
+            .chat_stream_counted(&model2, body, |tok| {
+                let _ = txc.send(sse_data(json!({ "type": "token", "content": tok })));
+            })
+            .await;
+        match res {
+            Ok((mut full, tin, tout)) => {
+                let ms = started.elapsed().as_millis() as i64;
+                // Garde-fou : chemins d'images cites mais inexistants ->
+                // retires (aucun outil n'a tourne, donc aucun fichier
+                // reel a substituer).
+                let rootp = std::path::Path::new(&root2);
+                let morts: Vec<String> = chemins_images(&full)
+                    .into_iter()
+                    .filter(|c| !chemin_existe(rootp, c))
+                    .collect();
+                if !morts.is_empty() {
+                    let corrige = corrige_chemins_image(&full, rootp, &[]);
+                    tracing::warn!(
+                        "garde-fou images (chemin rapide): morts={:?}",
+                        morts
+                    );
+                    let _ = tx.send(sse_data(json!({
+                        "type": "replace", "content": corrige,
+                    })));
+                    full = corrige;
+                }
+                let now2 = now_iso();
+                let _ = db2.execute(
+                    "INSERT INTO messages (conversation_id, role, content, model, duration_ms, created_at) VALUES (?,?,?,?,?,?)",
+                    &[&cid, &"assistant", &full.as_str(), &model2.as_str(), &ms, &now2.as_str()],
+                );
+                let _ = db2.execute(
+                    "UPDATE conversations SET updated_at=? WHERE id=?",
+                    &[&now2.as_str(), &cid],
+                );
+                let tps = if ms > 0 {
+                    ((tout as f64) * 1000.0 / (ms as f64) * 10.0).round() / 10.0
+                } else {
+                    0.0
+                };
+                let _ = tx.send(sse_data(json!({
+                    "type": "done",
+                    "conversation_id": cid,
+                    "duration_ms": ms,
+                    "model": model2,
+                    "prompt_tokens": tin,
+                    "completion_tokens": tout,
+                    "tokens_per_second": tps,
+                })));
+            }
+            Err(e) => {
+                let _ = tx.send(sse_data(json!({ "type": "error", "error": e.to_string() })));
+            }
+        }
+    });
+}
+
+/// Reponse via un fournisseur CLOUD (cle API). Regle impunee de la
+/// consigne bascule : en cas de credit/quota epuise, on bascule vers un
+/// modele LOCAL adapté ; JAMAIS vers un autre fournisseur a cle API
+/// (confirmation utilisateur obligatoire pour cela).
+fn spawn_reponse_cloud(
+    tx: mpsc::UnboundedSender<String>,
+    db2: localai_core::db::Db,
+    ollama: localai_core::ollama::Ollama,
+    root2: std::path::PathBuf,
+    provider_id: String,
+    history: Vec<Msg>,
+    cid: i64,
+    temperature: f32,
+    defaut_local: String,
+) {
+    tokio::spawn(async move {
+        let started = std::time::Instant::now();
+        let f = match localai_core::providers::trouver(&provider_id) {
+            Some(f) => f,
+            None => {
+                let _ = tx.send(sse_data(json!({
+                    "type": "error", "error": format!("fournisseur inconnu: {provider_id}")
+                })));
+                return;
+            }
+        };
+        let cle = db2.get_setting(&format!("provider_{provider_id}_key"), "");
+        if cle.is_empty() {
+            let _ = tx.send(sse_data(json!({
+                "type": "error",
+                "error": format!("cle API absente pour {provider_id} (Reglages > Fournisseurs)"),
+            })));
+            return;
+        }
+        let modele_cfg = db2.get_setting(&format!("provider_{provider_id}_model"), "");
+        let client = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(180))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tx.send(sse_data(json!({ "type": "error", "error": e.to_string() })));
+                return;
+            }
+        };
+        let modele_utilise = format!("cloud:{provider_id}");
+        match localai_core::providers::chat_usage(
+            &client, f, &cle, &modele_cfg, &history, temperature, 2048,
+        )
+        .await
+        {
+            Ok((texte, tin, tout)) => {
+                crate::routes::fournisseurs::effacer_quota_err(&db2, &provider_id);
+                crate::routes::fournisseurs::enregistrer_usage(&db2, &provider_id, tin, tout);
+                let mut full = texte;
+                if !full.is_empty() {
+                    let _ = tx.send(sse_data(json!({ "type": "token", "content": full.clone() })));
+                }
+                // Garde-fou images (comme le chemin local rapide).
+                let rootp = std::path::Path::new(&root2);
+                let morts: Vec<String> = chemins_images(&full)
+                    .into_iter()
+                    .filter(|c| !chemin_existe(rootp, c))
+                    .collect();
+                if !morts.is_empty() {
+                    let corrige = corrige_chemins_image(&full, rootp, &[]);
+                    let _ = tx.send(sse_data(json!({
+                        "type": "replace", "content": corrige,
+                    })));
+                    full = corrige;
+                }
+                let ms = started.elapsed().as_millis() as i64;
+                let now2 = now_iso();
+                let _ = db2.execute(
+                    "INSERT INTO messages (conversation_id, role, content, model, duration_ms, created_at) VALUES (?,?,?,?,?,?)",
+                    &[&cid, &"assistant", &full.as_str(), &modele_utilise.as_str(), &ms, &now2.as_str()],
+                );
+                let _ = db2.execute(
+                    "UPDATE conversations SET updated_at=? WHERE id=?",
+                    &[&now2.as_str(), &cid],
+                );
+                let tps = if ms > 0 {
+                    ((tout as f64) * 1000.0 / (ms as f64) * 10.0).round() / 10.0
+                } else {
+                    0.0
+                };
+                let _ = tx.send(sse_data(json!({
+                    "type": "done",
+                    "conversation_id": cid,
+                    "duration_ms": ms,
+                    "model": modele_utilise,
+                    "prompt_tokens": tin,
+                    "completion_tokens": tout,
+                    "tokens_per_second": tps,
+                })));
+            }
+            Err(e) => {
+                if localai_core::providers::est_quota_epuise(&e) {
+                    // Credit/quota epuise -> bascule AUTOMATIQUE vers un
+                    // modele LOCAL (jamais un autre fournisseur a cle API).
+                    crate::routes::fournisseurs::noter_quota_epuise(&db2, &provider_id, &e);
+                    let _ = tx.send(sse_data(json!({
+                        "type": "bascule",
+                        "from": modele_utilise,
+                        "to": defaut_local,
+                        "raison": "credit/quota du fournisseur epuise -> bascule vers un modele local",
+                    })));
+                    let body = serde_json::json!({
+                        "messages": messages_json(&history, &None),
+                        "think": false,
+                        "options": {
+                            "temperature": temperature,
+                            "num_predict": 2048,
+                            "num_ctx": NUM_CTX,
+                        },
+                    });
+                    spawn_reponse_locale(
+                        tx, db2, ollama, root2, defaut_local, body, cid,
+                    );
+                } else {
+                    let _ = tx.send(sse_data(json!({ "type": "error", "error": e })));
+                }
+            }
+        }
+    });
+}
+
 pub async fn chat(
     State(st): State<Arc<AppState>>,
     Json(b): Json<ChatBody>,
@@ -438,6 +638,20 @@ pub async fn chat(
         }
     }
 
+    // Modeles cloud (cloud:<fournisseur>) : reserves au chat pur. Si des
+    // outils doivent tourner (image, 3D, documents...), on reste en LOCAL
+    // (les outils tournent via Ollama ; consigne bascule : modele
+    // "adapte a la demande").
+    let mut model = model;
+    if model.starts_with("cloud:") && !tool_names.is_empty() {
+        if route_reason.is_empty() {
+            route_reason = "outils requis -> modele local (cloud ignore)".to_string();
+        } else {
+            route_reason.push_str(" | outils requis -> modele local (cloud ignore)");
+        }
+        model = st.settings.default_model.clone();
+    }
+
     let (tx, rx) = mpsc::unbounded_channel::<String>();
     let tx_meta = tx.clone();
     let _ = tx_meta.send(sse_data(json!({
@@ -449,7 +663,7 @@ pub async fn chat(
     })));
 
     if tool_names.is_empty() {
-        // Chemin rapide : streaming direct (inchange).
+        // Chemin rapide : streaming local compte OU fournisseur cloud.
         let db2 = st.db.clone();
         let ollama = st.ollama.clone();
         let model2 = model.clone();
@@ -463,56 +677,21 @@ pub async fn chat(
                 "num_ctx": NUM_CTX,
             },
         });
-        tokio::spawn(async move {
-            let started = std::time::Instant::now();
-            let txc = tx.clone();
-            let res = ollama
-                .chat_stream(&model2, body, |tok| {
-                    let _ = txc.send(sse_data(json!({ "type": "token", "content": tok })));
-                })
-                .await;
-            match res {
-                Ok(mut full) => {
-                    let ms = started.elapsed().as_millis() as i64;
-                    // Garde-fou : chemins d'images cites mais inexistants ->
-                    // retires (aucun outil n'a tourne, donc aucun fichier
-                    // reel a substituer).
-                    let rootp = std::path::Path::new(&root2);
-                    let morts: Vec<String> = chemins_images(&full)
-                        .into_iter()
-                        .filter(|c| !chemin_existe(rootp, c))
-                        .collect();
-                    if !morts.is_empty() {
-                        let corrige = corrige_chemins_image(&full, rootp, &[]);
-                        tracing::warn!(
-                            "garde-fou images (chemin rapide): morts={:?}",
-                            morts
-                        );
-                        let _ = tx.send(sse_data(json!({
-                            "type": "replace", "content": corrige,
-                        })));
-                        full = corrige;
-                    }
-                    let now2 = now_iso();
-                    let _ = db2.execute(
-                        "INSERT INTO messages (conversation_id, role, content, model, duration_ms, created_at) VALUES (?,?,?,?,?,?)",
-                        &[&cid, &"assistant", &full.as_str(), &model2.as_str(), &ms, &now2.as_str()],
-                    );
-                    let _ = db2.execute(
-                        "UPDATE conversations SET updated_at=? WHERE id=?",
-                        &[&now2.as_str(), &cid],
-                    );
-                    let _ = tx.send(sse_data(json!({
-                        "type": "done",
-                        "conversation_id": cid,
-                        "duration_ms": ms,
-                    })));
-                }
-                Err(e) => {
-                    let _ = tx.send(sse_data(json!({ "type": "error", "error": e.to_string() })));
-                }
-            }
-        });
+        if let Some(pid) = model.strip_prefix("cloud:").map(|s| s.to_string()) {
+            spawn_reponse_cloud(
+                tx,
+                db2,
+                ollama,
+                root2,
+                pid,
+                history,
+                cid,
+                temperature,
+                st.settings.default_model.clone(),
+            );
+        } else {
+            spawn_reponse_locale(tx, db2, ollama, root2, model2, body, cid);
+        }
     } else {
         // Chemin outils : boucle multi-rounds avec specs + execution.
         let db2 = st.db.clone();
@@ -672,10 +851,24 @@ pub async fn chat(
                 "UPDATE conversations SET updated_at=? WHERE id=?",
                 &[&now2.as_str(), &cid],
             );
+            // Stats estimees (multi-rounds : entree = contexte cumule,
+            // sortie = reponse finale) pour l'encart tokens.
+            let est_in = est_tokens(&messages) as i64;
+            let est_out = (full.chars().count() / 3) as i64;
+            let tps = if ms > 0 {
+                ((est_out as f64) * 1000.0 / (ms as f64) * 10.0).round() / 10.0
+            } else {
+                0.0
+            };
             let _ = tx.send(sse_data(json!({
                 "type": "done",
                 "conversation_id": cid,
                 "duration_ms": ms,
+                "model": model2,
+                "prompt_tokens": est_in,
+                "completion_tokens": est_out,
+                "tokens_per_second": tps,
+                "estime": true,
             })));
         });
     }

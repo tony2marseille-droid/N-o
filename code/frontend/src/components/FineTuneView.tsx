@@ -467,7 +467,16 @@ interface ImportStatus {
 
         <div className="panel" style={{ marginBottom: 14 }}>
           <h3>Dataset Manager</h3>
-          <div style={{ overflowX: "auto", marginBottom: 14 }}>
+          {/* Consigne : fenetre raccourcie + ascenseur vertical */}
+          <div
+            style={{
+              overflowX: "auto",
+              overflowY: "auto",
+              maxHeight: 320,
+              marginBottom: 14,
+              scrollbarWidth: "thin",
+            }}
+          >
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr style={{ color: "var(--text-faint)", borderBottom: "1px solid var(--border)" }}>

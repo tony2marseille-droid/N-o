@@ -52,6 +52,7 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
   const [messages, setMessages] = useState<Record<string, string>>({});
   const [interets, setInterets] = useState<string[]>([]);
   const [webUser, setWebUser] = useState("");
+  const [webPass, setWebPass] = useState("");
   const [displayName, setDisplayName] = useState("");
 
   const texte = useCallback((key: string) => t(lang, key), [lang]);
@@ -119,6 +120,13 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
       if (webUser.trim()) {
         await sendJSON("/api/settings", "PUT", { key: "web_user", value: webUser.trim() });
       }
+      // Consigne installation : pseudo + mot de passe pour l'acces Web UI.
+      if (webUser.trim() && webPass.trim()) {
+        await sendJSON("/api/auth/setup", "POST", {
+          user: webUser.trim(),
+          pass: webPass,
+        });
+      }
       if (displayName.trim()) {
         await sendJSON("/api/settings", "PUT", { key: "display_name", value: displayName.trim() });
       }
@@ -127,7 +135,7 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
     } catch (err) {
       toast(`Enregistrement impossible : ${err}`, "error");
     }
-  }, [lang, interets, webUser, displayName, onDone, toast]);
+  }, [lang, interets, webUser, webPass, displayName, onDone, toast]);
 
   const passer = useCallback(async () => {
     try {
@@ -321,6 +329,23 @@ export default function OnboardingWizard({ toast, onDone }: Props) {
               />
               <p className="onboarding-note" style={{ marginTop: 6 }}>
                 {texte("onboarding.webAccessHint")}
+              </p>
+              <label style={{ display: "block", marginTop: 16, marginBottom: 8, fontWeight: 500 }}>
+                Mot de passe (accès Web)
+              </label>
+              <input
+                type="password"
+                placeholder="Mot de passe (4 caractères minimum)"
+                value={webPass}
+                onChange={(e) => setWebPass(e.target.value)}
+                style={{ width: "100%", padding: "10px", fontSize: 14, border: "1px solid var(--border)", borderRadius: 6 }}
+                maxLength={64}
+              />
+              <p className="onboarding-note" style={{ marginTop: 6 }}>
+                Protège l'accès à l'interface depuis le réseau. Laissez
+                vide pour un accès libre. Note SSH : l'accès SSH se
+                configure au niveau du système (serveur OpenSSH de Windows),
+                pas depuis le logiciel.
               </p>
               <label style={{ display: "block", marginTop: 16, marginBottom: 8, fontWeight: 500 }}>
                 {texte("onboarding.userName")}

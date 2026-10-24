@@ -230,6 +230,31 @@ export async function postVoiceSSE(
   }
 }
 
+export interface ProviderCredit {
+  id: string;
+  nom: string;
+  configue: boolean;
+  modele: string;
+  tokens_in: number;
+  tokens_out: number;
+  requests: number;
+  updated_at: string;
+  credit: { total: number; utilise: number; restant: number } | null;
+  quota_err: string | null;
+}
+
+export interface DiscoveredModel {
+  name: string;
+  tag: string;
+}
+
+export interface NeoFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified: number;
+}
+
 export async function transcribeAudio(audioBlob: Blob): Promise<{
   text: string;
   language: string;

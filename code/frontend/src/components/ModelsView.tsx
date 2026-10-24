@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { BenchmarkSummary, ModelEntry } from "../lib/api";
+import type { BenchmarkSummary, DiscoveredModel, ModelEntry } from "../lib/api";
 import { getJSON, sendJSON, streamSSE } from "../lib/api";
 
 interface Props {
@@ -9,6 +9,25 @@ interface Props {
 }
 
 type ProgressState = { percent: number; status: string };
+
+/* --- Tier estime depuis la taille du modele (consigne : filtre T1..T5) --- */
+function paramB(m: ModelEntry): number {
+  const s = (m.parameter_size || "").toUpperCase();
+  const v = parseFloat(s) || 0;
+  if (s.includes("M") && !s.includes("B")) return v / 1000;
+  return v;
+}
+
+function tierDe(m: ModelEntry): string {
+  const t = m.tag.toLowerCase();
+  if (t.includes("nomic") || t.includes("embed")) return "Embed";
+  const b = paramB(m);
+  if (b >= 30) return "T5";
+  if (b >= 15) return "T4";
+  if (b >= 10) return "T3";
+  if (b >= 5) return "T2";
+  return "T1";
+}
 
 function formatSize(bytes: number): string {
   if (!bytes) return "—";
@@ -23,6 +42,9 @@ export default function ModelsView({ models, refreshModels, toast }: Props) {
   const [benchResults, setBenchResults] = useState<BenchmarkSummary[]>([]);
   const [benchCurrent, setBenchCurrent] = useState("");
   const [optionnels, setOptionnels] = useState<string[]>([]);
+  const [tierFiltre, setTierFiltre] = useState("");
+  const [decouverte, setDecouverte] = useState<DiscoveredModel[] | null>(null);
+  const [decouvreEnCours, setDecouvreEnCours] = useState(false);
 
   useEffect(() => {
     getJSON<{ optionnels: string[] }>("/api/system/hardware/pulls")
@@ -32,6 +54,27 @@ export default function ModelsView({ models, refreshModels, toast }: Props) {
 
   const estInstalle = (tag: string) =>
     models.some((m) => m.tag.toLowerCase() === tag.toLowerCase());
+
+  // Consigne : recherche de nouveaux modeles disponibles (bibliotheque
+  // publique Ollama) - bouton en haut de la fenetre Modeles.
+  const decouvrir = useCallback(async () => {
+    setDecouvreEnCours(true);
+    try {
+      const d = await sendJSON<{ nouveaux: DiscoveredModel[]; total: number }>(
+        "/api/models/discover",
+        "POST"
+      );
+      setDecouverte(d.nouveaux ?? []);
+      toast(
+        `${d.nouveaux?.length ?? 0} nouveaux modeles disponibles (sur ${d.total} scannes)`,
+        "success"
+      );
+    } catch (err) {
+      toast(`Recherche impossible : ${err}`, "error");
+    } finally {
+      setDecouvreEnCours(false);
+    }
+  }, [toast]);
 
   const installModel = useCallback(
     async (tag: string) => {
@@ -187,6 +230,53 @@ export default function ModelsView({ models, refreshModels, toast }: Props) {
         </span>
       </div>
       <div className="content-scroll">
+        {/* Consigne : filtre par tier + recherche de nouveaux modeles */}
+        <div className="toolbar" style={{ marginBottom: 10 }}>
+          <span style={{ color: "var(--text-dim)", fontSize: 12.5 }}>Tier :</span>
+          <div className="tier-chips">
+            {["", "T1", "T2", "T3", "T4", "T5", "Embed"].map((t) => (
+              <button
+                key={t || "tous"}
+                className={`tier-chip ${tierFiltre === t ? "active" : ""}`}
+                onClick={() => setTierFiltre(t)}
+              >
+                {t || "Tous"}
+              </button>
+            ))}
+          </div>
+          <span style={{ flex: 1 }} />
+          <button
+            className="primary"
+            disabled={decouvreEnCours}
+            onClick={() => void decouvrir()}
+          >
+            {decouvreEnCours ? "Recherche en cours..." : "Nouveaux modeles"}
+          </button>
+        </div>
+        {decouverte !== null && (
+          <div className="panel discover-panel" style={{ marginBottom: 14 }}>
+            <h3>Nouveaux modeles disponibles ({decouverte.length})</h3>
+            {decouverte.length === 0 ? (
+              <div style={{ color: "var(--text-dim)", fontSize: 12.5 }}>
+                Aucun nouveau modele trouve au-dela du catalogue local.
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {decouverte.map((m) => (
+                  <button
+                    key={m.tag}
+                    className="disc-chip"
+                    disabled={!!busyTag}
+                    title={`Installer ${m.tag}`}
+                    onClick={() => void installModel(m.tag)}
+                  >
+                    + {m.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {optionnels.length > 0 && (
           <div className="toolbar" style={{ flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
             <span style={{ color: "var(--text-dim)", fontSize: 12.5, width: "100%" }}>
@@ -267,7 +357,9 @@ export default function ModelsView({ models, refreshModels, toast }: Props) {
         )}
 
         <div className="models-grid">
-          {models.map((m) => (
+          {models
+            .filter((m) => !tierFiltre || tierDe(m) === tierFiltre)
+            .map((m) => (
             <div key={m.tag} className={`model-card ${m.loaded ? "running" : ""}`}>
               <div className="model-head">
                 <span className="model-name">{m.name}</span>

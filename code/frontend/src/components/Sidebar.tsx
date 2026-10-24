@@ -1,15 +1,13 @@
 import { useCallback } from "react";
-import type { Conversation, SystemInfo } from "../lib/api";
+import type { SystemInfo } from "../lib/api";
 import { type Lang, t } from "../lib/i18n";
+import TokenPanel from "./TokenPanel";
 
 interface Props {
   view: string;
   onView: (v: "accueil" | "chat" | "models" | "documents" | "collab" | "finetune" | "settings") => void;
-  conversations: Conversation[];
-  selectedConv: number | null;
-  onSelectConv: (id: number) => void;
-  onDeleteConv: (id: number) => void;
   onNewChat: () => void;
+  onToggleHistory: () => void;
   systemInfo: SystemInfo | null;
   lang: Lang;
 }
@@ -17,11 +15,8 @@ interface Props {
 export default function Sidebar({
   view,
   onView,
-  conversations,
-  selectedConv,
-  onSelectConv,
-  onDeleteConv,
   onNewChat,
+  onToggleHistory,
   systemInfo,
   lang,
 }: Props) {
@@ -98,34 +93,13 @@ export default function Sidebar({
         {texte("nav.newChat")}
       </button>
 
-      <div className="sidebar-section-title">{texte("nav.history")}</div>
-      <div className="conv-list">
-        {conversations.length === 0 && (
-          <div className="conv-item" style={{ cursor: "default", opacity: 0.5 }}>
-            {texte("nav.emptyHistory")}
-          </div>
-        )}
-        {conversations.map((c) => (
-          <div
-            key={c.id}
-            className={`conv-item ${c.id === selectedConv ? "selected" : ""}`}
-            onClick={() => onSelectConv(c.id)}
-            title={c.title}
-          >
-            {c.title}
-            <button
-              className="conv-del"
-              title="Supprimer"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteConv(c.id);
-              }}
-            >
-              ✕
-            </button>
-          </div>
-        ))}
-      </div>
+      {/* L'historique (conversations stockées) vit dans un panneau
+          lateral masquable ; l'encart tokens prend sa place ici. */}
+      <button className="history-toggle" onClick={onToggleHistory} title="Historique des conversations">
+        {texte("nav.history")}
+      </button>
+
+      <TokenPanel />
 
       <div className="side-status">
         <div className="status-line">

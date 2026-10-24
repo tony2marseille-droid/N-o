@@ -1,4 +1,5 @@
-﻿pub mod benchmark;
+﻿pub mod auth;
+pub mod benchmark;
 pub mod chat;
 pub mod comms;
 pub mod connecteurs;

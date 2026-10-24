@@ -4,6 +4,7 @@ import CollabView from "./components/CollabView";
 import DocumentsView from "./components/DocumentsView";
 import ErrorBoundary from "./components/ErrorBoundary";
 import FineTuneView from "./components/FineTuneView";
+import HistoryPanel from "./components/HistoryPanel";
 import HomeView from "./components/HomeView";
 import ModelsView from "./components/ModelsView";
 import OnboardingWizard from "./components/OnboardingWizard";
@@ -38,6 +39,10 @@ export default function App() {
   );
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [prefill, setPrefill] = useState<string | null>(null);
+  // Historique des conversations : panneau lateral masquable (consigne).
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Acces web (pseudo + mot de passe) configure a l'installation.
+  const [loginRequis, setLoginRequis] = useState(false);
   const [lang, setLangState] = useState<Lang>(() => normalizeLang(localStorage.getItem("neo.lang")));
   const [boot, setBoot] = useState<{ loaded: boolean; onboarded: boolean }>({
     loaded: false,
@@ -97,6 +102,24 @@ export default function App() {
       .catch(() => setBoot({ loaded: true, onboarded: true }));
   }, []);
 
+  // Acces web : si un pseudo/mot de passe est configure et qu'on n'a pas
+  // de token en local -> porte de login. Toute 401 (middleware Bearer)
+  // declenche aussi le login (evenement "neo-401" emis par le wrapper fetch).
+  useEffect(() => {
+    getJSON<{ active: boolean; user: string }>("/api/auth/status")
+      .then((s) => {
+        const token = localStorage.getItem("neo.token");
+        setLoginRequis(Boolean(s.active) && !token);
+      })
+      .catch(() => undefined);
+    const sur401 = () => {
+      localStorage.removeItem("neo.token");
+      setLoginRequis(true);
+    };
+    window.addEventListener("neo-401", sur401);
+    return () => window.removeEventListener("neo-401", sur401);
+  }, []);
+
   useEffect(() => {
     localStorage.setItem("localai.model", selectedModel);
   }, [selectedModel]);
@@ -133,6 +156,59 @@ export default function App() {
     [selectedConv, refreshConversations, toast]
   );
 
+  // Porte de login : l'acces web est protege par pseudo + mot de passe.
+  if (loginRequis) {
+    const tenter = async (user: string, pass: string) => {
+      try {
+        const r = await sendJSON<{ ok: boolean; token?: string; error?: string }>(
+          "/api/auth/login",
+          "POST",
+          { user, pass }
+        );
+        if (r.ok && r.token) {
+          localStorage.setItem("neo.token", r.token);
+          setLoginRequis(false);
+          void refreshModels();
+        } else {
+          const el = document.getElementById("login-err");
+          if (el) el.textContent = r.error ?? "Pseudo ou mot de passe incorrect.";
+        }
+      } catch (err) {
+        const el = document.getElementById("login-err");
+        if (el) el.textContent = String(err);
+      }
+    };
+    return (
+      <div className="login-overlay">
+        <form
+          className="login-card"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            void tenter(String(f.get("user") ?? ""), String(f.get("pass") ?? ""));
+          }}
+        >
+          <div className="brand">
+            <div className="brand-dot" />
+            <h1>NEO</h1>
+          </div>
+          <p className="login-sub">Acc&egrave;s prot&eacute;g&eacute; &mdash; identifie-toi.</p>
+          <input name="user" placeholder="Pseudo" autoComplete="username" autoFocus />
+          <input
+            name="pass"
+            type="password"
+            placeholder="Mot de passe"
+            autoComplete="current-password"
+          />
+          <button className="primary" type="submit">
+            Se connecter
+          </button>
+          <div id="login-err" className="login-err" />
+        </form>
+      </div>
+    );
+  }
+
   if (!boot.loaded) {
     return (
       <div className="app-boot">
@@ -147,16 +223,26 @@ export default function App() {
       <Sidebar
         view={view}
         onView={setView}
+        onNewChat={() => newChat()}
+        onToggleHistory={() => setHistoryOpen((h) => !h)}
+        systemInfo={systemInfo}
+        lang={lang}
+      />
+      <HistoryPanel
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
         conversations={conversations}
         selectedConv={selectedConv}
         onSelectConv={(id) => {
           setSelectedConv(id);
           setView("chat");
+          setHistoryOpen(false);
         }}
         onDeleteConv={(id) => void deleteConv(id)}
-        onNewChat={() => newChat()}
-        systemInfo={systemInfo}
-        lang={lang}
+        onNewChat={() => {
+          newChat();
+          setHistoryOpen(false);
+        }}
       />
       <main className="main">
         <ErrorBoundary viewKey={view}>

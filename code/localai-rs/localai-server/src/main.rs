@@ -15,9 +15,9 @@ use localai_core::{Settings, APP_NAME, APP_VERSION};
 use tower_http::cors::CorsLayer;
 
 use crate::routes::{
-    benchmark, chat, comms, connecteurs, conseil, conversations, documents, extras, finetune,
-    fournisseurs, health, memory, models, onboarding, outil, sd, security, settings, studio,
-    style_collab, system, tts, veille, voice,
+    auth, benchmark, chat, comms, connecteurs, conseil, conversations, documents, extras,
+    finetune, fournisseurs, health, memory, models, onboarding, outil, sd, security, settings,
+    studio, style_collab, system, tts, veille, voice,
 };
 
 #[derive(Clone)]
@@ -87,6 +87,7 @@ async fn main() {
     let token_api = state.db.get_setting("api_token", "").to_string();
     let mut app: Router = Router::new()
         .merge(health::router())
+        .merge(auth::router())
         .merge(chat::router())
         .merge(feedback::router())
         .merge(onboarding::router())
@@ -176,7 +177,10 @@ async fn auth_middleware(
 ) -> axum::response::Response {
     let chemin = req.uri().path();
     let local = addr.ip().is_loopback();
-    if local || chemin == "/api/health" || !chemin.starts_with("/api/") {
+    let public = chemin == "/api/health"
+        || chemin == "/api/auth/login"
+        || chemin == "/api/auth/status";
+    if local || public || !chemin.starts_with("/api/") {
         return next.run(req).await;
     }
     let token = state.db.get_setting("api_token", "");

@@ -25,6 +25,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/api/models/:tag", delete(delete_model))
         .route("/api/models/load", post(load))
         .route("/api/models/unload", post(unload))
+        .route("/api/models/discover", post(decouvrir))
 }
 
 fn same_model_tag(a: &str, b: &str) -> bool {
@@ -383,6 +384,120 @@ async fn unload(
 ) -> ApiResult<Json<Value>> {
     st.ollama.unload(&b.tag).await?;
     Ok(Json(json!({ "unloaded": b.tag })))
+}
+
+// ============================================================
+// Recherche de nouveaux modeles disponibles (bibliotheque Ollama).
+// ============================================================
+
+/// Extrait les identifiants de modeles d'une page HTML de
+/// https://ollama.com/library (liens href="/library/<slug>").
+fn slugs_depuis_html(html: &str) -> Vec<String> {
+    let bytes = html.as_bytes();
+    let pat = b"href=\"/library/";
+    let mut slugs: Vec<String> = Vec::new();
+    if pat.len() >= bytes.len() {
+        return slugs;
+    }
+    let mut i = 0usize;
+    while i + pat.len() < bytes.len() {
+        if &bytes[i..i + pat.len()] == pat {
+            let mut j = i + pat.len();
+            let mut slug = String::new();
+            while j < bytes.len() {
+                let c = bytes[j];
+                if c == b'"' || c == b'?' || c == b'#' {
+                    break;
+                }
+                if !(c.is_ascii_alphanumeric() || c == b'-' || c == b'.' || c == b'_' || c == b':') {
+                    break;
+                }
+                slug.push(c as char);
+                j += 1;
+            }
+            if !slug.is_empty() && !slugs.contains(&slug) {
+                slugs.push(slug);
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    slugs
+}
+
+/// POST /api/models/discover : recupere la bibliotheque publique Ollama
+/// et retourne les modeles absents du catalogue local et du disque.
+async fn decouvrir(State(st): State<Arc<AppState>>) -> ApiResult<Json<serde_json::Value>> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(25))
+        .build()
+        .map_err(|e| ApiError(localai_core::AppError::Internal(e.to_string())))?;
+    let rep = client
+        .get("https://ollama.com/library")
+        .header("User-Agent", "Mozilla/5.0 (localai-neo)")
+        .send()
+        .await
+        .map_err(|e| ApiError(localai_core::AppError::Internal(format!("acces ollama.com: {e}"))))?;
+    if !rep.status().is_success() {
+        return Err(ApiError(localai_core::AppError::Internal(format!(
+            "ollama.com HTTP {}",
+            rep.status()
+        ))));
+    }
+    let html = rep
+        .text()
+        .await
+        .map_err(|e| ApiError(localai_core::AppError::Internal(e.to_string())))?;
+    let slugs = slugs_depuis_html(&html);
+    let total_slugs = slugs.len();
+
+    // Connus : tags du catalogue local (models.json, sans pybridge) + installes.
+    let mut connus: Vec<String> = Vec::new();
+    if let Ok(texte) = std::fs::read_to_string(st.settings.root_dir.join("config").join("models.json")) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&texte) {
+            if let Some(arr) = v.get("models").and_then(|m| m.as_array()) {
+                for m in arr {
+                    if let Some(t) = m.get("tag").and_then(|x| x.as_str()) {
+                        connus.push(t.to_lowercase());
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(v) = st.ollama.tags().await {
+        if let Some(arr) = v.get("models").and_then(|m| m.as_array()) {
+            for m in arr {
+                if let Some(n) = m.get("name").and_then(|x| x.as_str()) {
+                    connus.push(n.to_lowercase());
+                }
+            }
+        }
+    }
+    let base_connus: Vec<String> = connus
+        .iter()
+        .map(|t| t.split(':').next().unwrap_or(t).to_string())
+        .collect();
+    let nouveaux: Vec<serde_json::Value> = slugs
+        .into_iter()
+        .filter(|s| {
+            let base = s.split(':').next().unwrap_or(s);
+            !base.is_empty()
+                && !base_connus.iter().any(|k| k == base)
+                && !base.starts_with("library")
+        })
+        .take(80)
+        .map(|s| {
+            serde_json::json!({
+                "name": s.clone(),
+                "tag": format!("{s}:latest"),
+            })
+        })
+        .collect();
+    Ok(Json(serde_json::json!({
+        "nouveaux": nouveaux,
+        "total": total_slugs,
+    })))
 }
 
 #[cfg(test)]

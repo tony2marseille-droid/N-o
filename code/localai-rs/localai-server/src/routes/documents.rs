@@ -22,6 +22,7 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/api/documents/apprentissage", post(apprentissage))
         .route("/api/documents/apprentissage/status", get(apprentissage_status))
         .route("/api/documents/:id", delete(remove))
+        .route("/api/documents/neo-files", get(neo_files))
 }
 
 const MAX_FILE_SIZE: usize = 30 * 1024 * 1024;
@@ -40,7 +41,56 @@ fn ensure_category(st: &Arc<crate::AppState>) {
     }
     let _ = st.db.execute("ALTER TABLE documents ADD COLUMN category TEXT DEFAULT ''", &[]);
     let _ = st.db.execute("ALTER TABLE documents ADD COLUMN description TEXT DEFAULT ''", &[]);
+    // Colonne system : 1 = document d'entrainement / fichier du logiciel ->
+    // invisible dans l'UI (consigne : jamais supprime, juste masque).
+    let _ = st.db.execute("ALTER TABLE documents ADD COLUMN system INTEGER DEFAULT 0", &[]);
+    marquer_docs_systeme(st);
     CATEGORY_OK.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Marque comme systeme les documents d'entrainement de Nco et les
+/// fichiers sources du logiciel (restent en base/disque pour le RAG et
+/// l'apprentissage, mais n'apparaissent plus dans l'interface).
+/// Les lecons apprises (apprentissage_*) et les notes personnelles de
+/// l'utilisateur RESTENT visibles.
+fn marquer_docs_systeme(st: &Arc<crate::AppState>) {
+    let fichiers = [
+        // Corpus / fiches d'entrainement
+        "sft.txt", "sft_rlvr.txt", "dpo_pairs.txt", "agent_traces.txt",
+        "_rlvr_full.py", "_corpus_prog.py", "train_lora.py", "lora_prep.py",
+        "superviseur_train.py", "pipeline.py", "gen_corpus_v7.py", "gen_corpus_v92.py",
+        "autobench.py", "score_corpus.py", "score_corpus2.py", "score_corpus3.py",
+        "promote.py", "post_train_v9.py", "post_train_v7.py", "post_train_v8.py",
+        "verif_v92.py", "smoke_latest.py", "test_teacher.py", "test_teacher2.py",
+        "check_corpus.py", "check_dataset_v9.py", "compare_eval_v9.py",
+        "eval_battery_v9.py", "gen_amelioration_v9.py", "dump_corpus.py", "dump_smoke.py",
+        "collect_stats.py", "api_test_v6.json", "tags.json",
+        // Fichiers sources du logiciel
+        "main.py", "engine.py", "executor.py", "__init__.py", "ollama.py",
+        "llamacpp.py", "base.py", "vector_store.py", "security.py", "sdgen.py",
+        "router.py", "rlvr.py", "rag.py", "orchestrator.py", "knowledge.py",
+        "interests.py", "hardware.py", "documents.py", "distiller.py",
+        "database.py", "config.py", "catalog.py", "autotune.py", "agents.py",
+        "schemas.py", "run_dev.py", "launcher.py", "requirements.txt",
+        "requirements-dev.txt", "package.json", "package-lock.json",
+        "tsconfig.json", "tsconfig.node.json", "tsconfig.app.json",
+        ".oxlintrc.json", "security_rules.json", "hardware_profile.json",
+        "models.json", "manifest.json", "README.md", "CONTEXT.md",
+        "SETUP-PC-PUISSANT.md", "MASTER_PLAN.md", "GUIDE_PUISSANCE.md",
+        "PROMPT_OPENCODE.md", "FIX_BENCH.md", "FIX_COMMANDES_OPENCODE.md",
+        "mem.bat", "mem.py", "vite.config.ts", "run_dev.ts",
+        "docker-compose.yml", "Dockerfile", ".gitignore", "AGENTS.md",
+        "INSTALL.bat", "INSTALLER.bat", "INSTALLER.ps1", "launcher_localai.bat",
+        "PUBLIER.md", "app.py", "server.py", "client.py",
+    ];
+    let liste: Vec<String> = fichiers.iter().map(|f| format!("'{f}'")).collect();
+    let sql = format!(
+        "UPDATE documents SET system=1 WHERE (system IS NULL OR system=0) AND (          filename IN ({}) OR filename LIKE 'routes%' OR substr(filename,1,1)='_'          OR description LIKE '%%entrain%%' OR description LIKE '%%exercice%%'          OR description LIKE '%%logiciel%%' OR description LIKE '%%plateforme d%%'          OR description LIKE '%%corpus%%')",
+        liste.join(",")
+    );
+    // NB : notes_projet.txt, doc_*.txt, codes_postaux*, apprentissage_*
+    // restent visibles : ce sont des documents/fiches utilisateur.
+    let _ = st.db.execute(&sql, &[]);
 }
 
 async fn classify_text(st: &Arc<crate::AppState>, filename: &str, excerpt: &str) -> String {
@@ -84,6 +134,7 @@ fn illustration_prompt(cat: &str) -> String {
         "finances" => "stacked coins and a rising chart",
         "loisirs" => "an open book and a game controller",
         "science" => "an atom and a laboratory flask",
+        "neo" => "a glowing green wireframe head silhouette with data streams",
         _ => "a folder full of documents",
     };
     format!(
@@ -134,8 +185,10 @@ print(json.dumps({{'ok': os.path.exists(r'{}')}}))",
 
 async fn list(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {
     ensure_category(&st);
+    // Consigne : les documents d'entrainement/logiciel restent en base
+    // mais sont invisibles dans l'UI (system=0 requis).
     let rows = st.db.query_all_json(
-        "SELECT id, filename, size_bytes, chunk_count, created_at, category, description FROM documents ORDER BY id DESC",
+        "SELECT id, filename, size_bytes, chunk_count, created_at, category, description          FROM documents WHERE COALESCE(system,0)=0 ORDER BY id DESC",
         &[],
     )?;
     Ok(Json(json!({ "documents": rows })))
@@ -203,8 +256,10 @@ async fn fiches(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>
     ensure_category(&st);
     let dir = st.settings.data_dir.join("fiches");
     let _ = std::fs::create_dir_all(&dir);
+    // Comptage des fiches : uniquement les documents VISIBLES (les
+    // documents systeme masques ne comptent pas dans les fiches).
     let rows = st.db.query_all_json(
-        "SELECT category, COUNT(*) AS n FROM documents GROUP BY category",
+        "SELECT category, COUNT(*) AS n FROM documents WHERE COALESCE(system,0)=0 GROUP BY category",
         &[],
     )?;
     let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
@@ -228,6 +283,18 @@ async fn fiches(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>
         fiches.push(json!({
             "category": c,
             "count": counts.get(*c).copied().unwrap_or(0),
+            "illustration": has,
+        }));
+    }
+    // Categorie "Neo" : fichiers generes pendant le chat (photos 4K, STL...).
+    {
+        let has = dir.join("fiche_neo.jpg").is_file();
+        if !has {
+            missing.push("neo".to_string());
+        }
+        fiches.push(json!({
+            "category": "neo",
+            "count": neo_fichiers(&st.settings.root_dir).len() as i64,
             "illustration": has,
         }));
     }
@@ -409,6 +476,71 @@ async fn apprentissage_status(State(st): State<Arc<crate::AppState>>) -> ApiResu
         })
         .unwrap_or_default();
     Ok(Json(json!({ "running": running, "category": cat, "etape": etape })))
+}
+
+/// Liste les fichiers generes par le chat (photos, meshes, rendus) dans
+/// workspace/ et data/img_gen : classement automatique en categorie "Neo".
+/// Retourne (chemin relatif a la racine, taille octets, modifie unix sec).
+fn neo_fichiers(root: &std::path::Path) -> Vec<(String, u64, i64)> {
+    let mut out: Vec<(String, u64, i64)> = Vec::new();
+    let exts = ["png", "jpg", "jpeg", "webp", "stl", "scad", "gcode", "obj"];
+    for base in ["workspace", "data/img_gen"] {
+        let dir = root.join(base);
+        let mut pile: Vec<std::path::PathBuf> = vec![dir];
+        let mut garde = 0usize;
+        while let Some(d) = pile.pop() {
+            garde += 1;
+            if garde > 64 {
+                break;
+            }
+            let Ok(entries) = std::fs::read_dir(&d) else { continue };
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    if p.components().count() < 6 {
+                        pile.push(p);
+                    }
+                    continue;
+                }
+                let Some(ext) = p.extension().and_then(|x| x.to_str()) else { continue };
+                if !exts.contains(&ext.to_ascii_lowercase().as_str()) {
+                    continue;
+                }
+                let Ok(meta) = std::fs::metadata(&p) else { continue };
+                let taille = meta.len();
+                let modifie = meta
+                    .modified()
+                    .ok()
+                    .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let relatif = p
+                    .strip_prefix(root)
+                    .map(|r| r.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| p.to_string_lossy().to_string());
+                out.push((relatif, taille, modifie));
+            }
+        }
+    }
+    out.sort_by(|a, b| b.2.cmp(&a.2));
+    out.truncate(300);
+    out
+}
+
+/// GET /api/documents/neo-files : fichiers de la categorie "Neo".
+async fn neo_files(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {
+    let fichiers = neo_fichiers(&st.settings.root_dir);
+    let arr: Vec<Value> = fichiers
+        .into_iter()
+        .map(|(chemin, taille, modifie)| {
+            let nom = std::path::Path::new(&chemin)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| chemin.clone());
+            json!({ "name": nom, "path": chemin, "size_bytes": taille, "modified": modifie })
+        })
+        .collect();
+    Ok(Json(json!({ "files": arr })))
 }
 
 fn unpack_f32le(blob: &[u8]) -> Vec<f32> {

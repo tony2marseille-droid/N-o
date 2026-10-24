@@ -209,6 +209,77 @@ impl Ollama {
         Ok(full)
     }
 
+    /// Chat en streaming AVEC compteurs de tokens : le chunk final Ollama
+    /// (done=true) contient prompt_eval_count (entree) et eval_count
+    /// (sortie). Retourne (texte complet, tokens entree, tokens sortie).
+    pub async fn chat_stream_counted<F>(
+        &self,
+        model: &str,
+        body: serde_json::Value,
+        mut on_token: F,
+    ) -> AppResult<(String, i64, i64)>
+    where
+        F: FnMut(&str),
+    {
+        use futures_util::StreamExt;
+        let mut req = serde_json::Map::new();
+        if let Some(obj) = body.as_object() {
+            for (k, v) in obj {
+                req.insert(k.clone(), v.clone());
+            }
+        }
+        req.insert("model".into(), serde_json::Value::from(model));
+        req.insert("stream".into(), serde_json::Value::from(true));
+        req.entry("keep_alive")
+            .or_insert_with(|| serde_json::Value::from("60m"));
+        let resp = self
+            .client
+            .post(format!("{}/api/chat", self.base))
+            .json(&serde_json::Value::Object(req))
+            .send()
+            .await?;
+        let mut stream = resp.bytes_stream();
+        let mut full = String::new();
+        let mut buf: Vec<u8> = Vec::new();
+        let mut prompt_tokens: i64 = 0;
+        let mut completion_tokens: i64 = 0;
+        while let Some(chunk) = stream.next().await {
+            let bytes = chunk?;
+            buf.extend_from_slice(&bytes);
+            while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+                let line: Vec<u8> = buf.drain(..=pos).collect();
+                let s = String::from_utf8_lossy(&line);
+                let s = s.trim();
+                if s.is_empty() {
+                    continue;
+                }
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                    if v.get("done").and_then(|d| d.as_bool()).unwrap_or(false) {
+                        // Chunk final : compteurs reels de la requete.
+                        prompt_tokens = v
+                            .get("prompt_eval_count")
+                            .and_then(|x| x.as_i64())
+                            .unwrap_or(0);
+                        completion_tokens = v
+                            .get("eval_count")
+                            .and_then(|x| x.as_i64())
+                            .unwrap_or(0);
+                        continue;
+                    }
+                    if let Some(t) = v
+                        .get("message")
+                        .and_then(|m| m.get("content"))
+                        .and_then(|c| c.as_str())
+                    {
+                        full.push_str(t);
+                        on_token(t);
+                    }
+                }
+            }
+        }
+        Ok((full, prompt_tokens, completion_tokens))
+    }
+
     /// Precharge un modele (chaud pour la prochaine requete, sans generer).
     /// Si le modele est deja charge mais 100 % CPU (VRAM occupee au moment du
     /// chargement), il est decharge puis recharge pour viser le GPU.

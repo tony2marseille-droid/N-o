@@ -84,7 +84,7 @@ async fn chat_openai(
     messages: &[crate::ollama::Msg],
     temperature: f32,
     max_tokens: u32,
-) -> Result<String, String> {
+) -> Result<(String, i64, i64), String> {
     let corps = json!({
         "model": modele,
         "messages": convert_messages(messages),
@@ -105,13 +105,25 @@ async fn chat_openai(
         return Err(format!("HTTP {statut}: {court}"));
     }
     let v: Value = serde_json::from_str(&texte).map_err(|e| format!("json: {e}"))?;
-    v.get("choices")
+    let contenu = v
+        .get("choices")
         .and_then(|c| c.get(0))
         .and_then(|c| c.get("message"))
         .and_then(|m| m.get("content"))
         .and_then(|c| c.as_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| "reponse sans contenu".into())
+        .ok_or_else(|| "reponse sans contenu".to_string())?;
+    // Usage (tokens entree/sortie) present chez tous les OpenAI-compatibles.
+    let (tin, tout) = v
+        .get("usage")
+        .map(|u| {
+            (
+                u.get("prompt_tokens").and_then(|x| x.as_i64()).unwrap_or(0),
+                u.get("completion_tokens").and_then(|x| x.as_i64()).unwrap_or(0),
+            )
+        })
+        .unwrap_or((0, 0));
+    Ok((contenu, tin, tout))
 }
 
 /// Chat via l'API Anthropic (format natif : systeme separe, max_tokens requis).
@@ -123,7 +135,7 @@ async fn chat_anthropic(
     messages: &[crate::ollama::Msg],
     temperature: f32,
     max_tokens: u32,
-) -> Result<String, String> {
+) -> Result<(String, i64, i64), String> {
     let mut systeme = String::new();
     let mut conversation: Vec<Value> = Vec::new();
     for m in messages {
@@ -158,7 +170,8 @@ async fn chat_anthropic(
         return Err(format!("HTTP {statut}: {court}"));
     }
     let v: Value = serde_json::from_str(&texte).map_err(|e| format!("json: {e}"))?;
-    v.get("content")
+    let contenu = v
+        .get("content")
         .and_then(|c| c.as_array())
         .and_then(|a| {
             a.iter()
@@ -167,10 +180,20 @@ async fn chat_anthropic(
                 .first()
                 .map(|s| s.to_string())
         })
-        .ok_or_else(|| "reponse sans contenu".into())
+        .ok_or_else(|| "reponse sans contenu".to_string())?;
+    let (tin, tout) = v
+        .get("usage")
+        .map(|u| {
+            (
+                u.get("input_tokens").and_then(|x| x.as_i64()).unwrap_or(0),
+                u.get("output_tokens").and_then(|x| x.as_i64()).unwrap_or(0),
+            )
+        })
+        .unwrap_or((0, 0));
+    Ok((contenu, tin, tout))
 }
 
-/// Chat unifie : choisit le format selon le fournisseur.
+/// Chat unifie : choisit le format selon le fournisseur (sans compteurs).
 pub async fn chat(
     client: &reqwest::Client,
     fournisseur: &Fournisseur,
@@ -180,6 +203,24 @@ pub async fn chat(
     temperature: f32,
     max_tokens: u32,
 ) -> Result<String, String> {
+    let (texte, _, _) = chat_usage(
+        client, fournisseur, cle, modele, messages, temperature, max_tokens,
+    )
+    .await?;
+    Ok(texte)
+}
+
+/// Chat unifie AVEC compteurs de tokens consommes (entree, sortie).
+/// Sert au suivi de consommation par fournisseur et a l encart tokens.
+pub async fn chat_usage(
+    client: &reqwest::Client,
+    fournisseur: &Fournisseur,
+    cle: &str,
+    modele: &str,
+    messages: &[crate::ollama::Msg],
+    temperature: f32,
+    max_tokens: u32,
+) -> Result<(String, i64, i64), String> {
     let modele = if modele.is_empty() || modele == "defaut" {
         fournisseur.modele_defaut
     } else {
@@ -193,4 +234,19 @@ pub async fn chat(
             chat_anthropic(client, fournisseur.base_url, cle, modele, messages, temperature, max_tokens).await
         }
     }
+}
+
+/// Detecte une erreur de quota/credit epuise chez un fournisseur cloud
+/// (402 payment required, 429 rate/quota, insufficient_credits, billing...).
+/// Utilise par la bascule automatique vers un modele LOCAL.
+pub fn est_quota_epuise(err: &str) -> bool {
+    let e = err.to_lowercase();
+    e.contains("402")
+        || e.contains("429")
+        || e.contains("insufficient")
+        || e.contains("quota")
+        || e.contains("credit")
+        || e.contains("exceeded")
+        || e.contains("billing")
+        || e.contains("payment")
 }

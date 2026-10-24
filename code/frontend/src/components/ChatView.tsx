@@ -417,8 +417,57 @@ export default function ChatView({
               copy[copy.length - 1] = { ...last };
               return copy;
             });
+          } else if (event.type === "bascule") {
+            // Bascule automatique (consigne tokens) : credit/quota cloud
+            // epuise -> modele LOCAL. Jamais un autre fournisseur a cle.
+            toast(
+              `Bascule auto : ${event.from} vers ${event.to} (${event.raison})`,
+              "info"
+            );
+            setPipeline((p) =>
+              p ? { ...p, model: String(event.to ?? "") } : p
+            );
           } else if (event.type === "done") {
             flushBuf();
+            // Stats de la requete (encart tokens) : entree / sortie / total.
+            const stIn =
+              typeof event.prompt_tokens === "number" ? (event.prompt_tokens as number) : 0;
+            const stOut =
+              typeof event.completion_tokens === "number" ? (event.completion_tokens as number) : 0;
+            const stTps =
+              typeof event.tokens_per_second === "number" ? (event.tokens_per_second as number) : 0;
+            if (stIn > 0 || stOut > 0) {
+              window.dispatchEvent(
+                new CustomEvent("neo-stats", {
+                  detail: {
+                    in: stIn,
+                    out: stOut,
+                    tps: stTps,
+                    model: String(event.model ?? ""),
+                    estime: Boolean(event.estime),
+                  },
+                })
+              );
+              setMessages((prev) => {
+                const copy = [...prev];
+                const last = copy[copy.length - 1];
+                if (!last || last.role !== "assistant") return copy;
+                copy[copy.length - 1] = {
+                  ...last,
+                  model: (event.model as string) || last.model,
+                  stats: {
+                    prompt_tokens: stIn,
+                    completion_tokens: stOut,
+                    tokens_per_second: stTps,
+                    total_duration_ms:
+                      typeof event.duration_ms === "number"
+                        ? (event.duration_ms as number)
+                        : undefined,
+                  },
+                };
+                return copy;
+              });
+            }
             // Repli anti-ecran-vide : si aucun token n'a ete rendu, on
             // recharge la reponse stockee depuis l'API.
             if (!finalContent && convId) {
