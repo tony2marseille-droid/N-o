@@ -1,4 +1,4 @@
-﻿# Néo — Assistant IA 100 % local
+# Néo — Assistant IA 100 % local
 
 > Chat, agents à outils, génération d'images 4K photoréalistes fidèles au sujet,
 > 3D/STL imprimable, documents bureautiques, RAG, voix française (mot d'éveil),
@@ -9,6 +9,37 @@ local : un **serveur Rust** ultra-léger (8 Mo de RAM, 3 680 req/s), un backend
 Python spécialisé (kernels SD/TTS/STT/3D), **Ollama** pour l'inférence et un
 fine-tune maison. L'ensemble est orchestré comme un majordome numérique :
 agents spécialisés, pont vocal, auto-amélioration par cycles d'entraînement.
+
+## 📸 Captures d'écran
+
+| Accueil (thème Matrix) | Chat & agents à outils |
+|---|---|
+| ![Accueil](assets/capture_accueil.png) | ![Chat](assets/capture_chat.png) |
+
+| Modèles (filtres T1–T5) | Documents (RAG) | Auto-amélioration |
+|---|---|---|
+| ![Modèles](assets/capture_modeles.png) | ![Documents](assets/capture_documents.png) | ![Fine-tune](assets/capture_finetune.png) |
+
+### Exemples de générations 4K (FLUX local, 100 % sur votre GPU)
+
+| | | |
+|---|---|---|
+| ![Mars](assets/exemple_mars.jpg) | ![SR-71](assets/exemple_sr71.jpg) | ![Dragon de feu](assets/exemple_dragon_feu.jpg) |
+| **Mars** | **SR-71 au coucher du soleil** | **Dragon des enfers** |
+| ![Dragon de glaces](assets/exemple_dragon_glaces.jpg) | ![Freddy](assets/exemple_freddy.jpg) | ![Jason](assets/exemple_jason.jpg) |
+| **Dragon de glaces** | **Freddy Krueger** | **Jason Voorhees** |
+
+*Toutes ces images ont été générées en local par Néo (FLUX.1-schnell + Real-ESRGAN, contrôle qualité vision automatique).*
+
+## 🚧 Un projet qui avance
+
+Néo est en **développement actif** : les fonctionnalités existantes sont
+améliorées en continu (pipeline image 4K avec formats masters TIFF/EXR,
+agents à outils, interface) et de **nouvelles fonctions arrivent** —
+suivi de la consommation de tokens en temps réel, bascule automatique
+entre modèles, envoi Telegram multi-photos, nouveaux connecteurs et
+améliorations de l'auto-amélioration. ⭐ *Star le dépôt pour suivre
+les évolutions !*
 
 ---
 
@@ -108,3 +139,10 @@ machine via les variables d'environnement `LOCALAI_*`.
 *Â© 2026 â€” NÃ©o. Code original publiÃ© sans licence : tous droits rÃ©servÃ©s Ã 
 l'auteur. Voir `docs/DEPENDANCES.md` pour les licences des dÃ©pendances et
 des modÃ¨les.*
+
+## 🔎 Mots-clés
+
+`assistant IA local` · `LLM auto-hébergé` · `Ollama` · `Rust` · `Axum` · `React` · `TypeScript` ·
+`FLUX.1` · `génération d'images 4K` · `text-to-image` · `text-to-3D` · `imprimante 3D` · `STL` ·
+`RAG` · `chatbot hors ligne` · `Telegram bot` · `Whisper STT` · `TTS français` · `fine-tuning LoRA` ·
+`GGUF` · `stable diffusion` · `agents à outils` · `auto-hébergé` · `vie privée` · `sans cloud`
