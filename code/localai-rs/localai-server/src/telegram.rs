@@ -41,9 +41,26 @@ pub async fn envoyer_message(client: &reqwest::Client, token: &str, cid: i64, te
         .await;
 }
 
+/// Masters TIFF/EXR : Telegram ne les affiche pas en photo -> remplace
+/// par l'apercu JPEG cote a cote (genere par l'outil) quand il existe.
+fn chemin_telegram(chemin: &str) -> String {
+    let bas = chemin.to_lowercase();
+    if bas.ends_with(".tiff") || bas.ends_with(".tif") || bas.ends_with(".exr") {
+        if let Some(pos) = chemin.rfind('.') {
+            let apercu = format!("{}_apercu.jpg", &chemin[..pos]);
+            if std::path::Path::new(&apercu).is_file() {
+                return apercu;
+            }
+        }
+    }
+    chemin.to_string()
+}
+
 /// Envoie une image locale sur Telegram : sendPhoto (<= 10 Mo) sinon
 /// sendDocument (jusqu'a 50 Mo, cas des images 4K).
 pub async fn envoyer_image(client: &reqwest::Client, token: &str, cid: i64, chemin: &str, legende: &str) {
+    let chemin_owned: String = chemin_telegram(chemin);
+    let chemin: &str = &chemin_owned;
     let meta = match tokio::fs::metadata(chemin).await {
         Ok(m) => m,
         Err(_) => return,
@@ -91,7 +108,12 @@ fn chemins_images(texte: &str, deja: &mut Vec<String>) {
                     .unwrap_or("")
                     .to_string();
                 let bas = chemin.to_lowercase();
-                if (bas.ends_with(".png") || bas.ends_with(".jpg") || bas.ends_with(".jpeg"))
+                if (bas.ends_with(".png")
+                    || bas.ends_with(".jpg")
+                    || bas.ends_with(".jpeg")
+                    || bas.ends_with(".tiff")
+                    || bas.ends_with(".tif")
+                    || bas.ends_with(".exr"))
                     && !deja.iter().any(|x| x.eq_ignore_ascii_case(&chemin))
                 {
                     deja.push(chemin);
