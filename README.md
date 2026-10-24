@@ -10,6 +10,8 @@ Python spécialisé (kernels SD/TTS/STT/3D), **Ollama** pour l'inférence et un
 fine-tune maison. L'ensemble est orchestré comme un majordome numérique :
 agents spécialisés, pont vocal, auto-amélioration par cycles d'entraînement.
 
+![Démo de Néo](assets/demo_neo.gif)
+
 ## 📸 Captures d'écran
 
 | Accueil (thème Matrix) | Chat & agents à outils |
