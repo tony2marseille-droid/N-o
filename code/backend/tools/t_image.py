@@ -203,6 +203,12 @@ def tool_generate_image(
         save_path = re.sub(r"\.(png|jpe?g|webp|tiff?|exr)$", ".png", save_path, flags=re.I)
         if not save_path.lower().endswith(".png"):
             save_path += ".png"
+    elif not maitre and not save_path.lower().endswith(ext):
+        # Format resolu != extension du chemin : on harmonise (ex chemin
+        # .tiff mais reglage png -> vrai .png ; jamais du PNG dans .tiff).
+        save_path = re.sub(r"\.(png|jpe?g|webp|tiff?|exr)$", ext, save_path, flags=re.I)
+        if not save_path.lower().endswith(ext):
+            save_path += ext
 
     variantes = max(1, min(3, int(variantes or 1)))
 

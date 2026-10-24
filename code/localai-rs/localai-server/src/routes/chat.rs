@@ -697,7 +697,8 @@ pub async fn chat(
         let db2 = st.db.clone();
         let ollama = st.ollama.clone();
         let root = st.settings.root_dir.clone();
-        let model2 = model.clone();
+        let mut model2 = model.clone();
+        let defaut2 = st.settings.default_model.clone();
         let level = tools::tool_level(&st.db);
         let images2 = images_clean.clone();
         tokio::spawn(async move {
@@ -724,8 +725,42 @@ pub async fn chat(
                 {
                     Ok(r) => r,
                     Err(e) => {
-                        let _ = tx.send(sse_data(json!({ "type": "error", "error": e.to_string() })));
-                        return;
+                        let msg = e.to_string();
+                        // Modele sans support d'outils natifs (ex gemma3:
+                        // 400 Bad Request) -> bascule AUTOMATIQUE vers le
+                        // modele par defaut (adapte a la demande : les
+                        // outils sont requis), puis on relance CE tour.
+                        let bascule_possible = model2 != defaut2
+                            && (msg.contains("400")
+                                || msg.contains("does not support")
+                                || msg.contains("tools"));
+                        if bascule_possible {
+                            let _ = tx.send(sse_data(json!({
+                                "type": "bascule",
+                                "from": model2,
+                                "to": defaut2,
+                                "raison": "modele sans support d'outils -> bascule vers le modele par defaut",
+                            })));
+                            model2 = defaut2.clone();
+                            let payload2 = messages_json(&messages, &Some(images2.clone()));
+                            match ollama
+                                .chat_tools(&model2, payload2, &specs, temperature, 2048)
+                                .await
+                            {
+                                Ok(r) => r,
+                                Err(e2) => {
+                                    let _ = tx.send(sse_data(json!({
+                                        "type": "error", "error": e2.to_string()
+                                    })));
+                                    return;
+                                }
+                            }
+                        } else {
+                            let _ = tx.send(sse_data(json!({
+                                "type": "error", "error": msg
+                            })));
+                            return;
+                        }
                     }
                 };
                 if !text.is_empty() {
