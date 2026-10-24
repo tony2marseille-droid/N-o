@@ -483,7 +483,8 @@ async fn apprentissage_status(State(st): State<Arc<crate::AppState>>) -> ApiResu
 /// Retourne (chemin relatif a la racine, taille octets, modifie unix sec).
 fn neo_fichiers(root: &std::path::Path) -> Vec<(String, u64, i64)> {
     let mut out: Vec<(String, u64, i64)> = Vec::new();
-    let exts = ["png", "jpg", "jpeg", "webp", "stl", "scad", "gcode", "obj"];
+    let exts = ["png", "jpg", "jpeg", "webp", "tif", "tiff", "exr",
+        "stl", "scad", "gcode", "obj"];
     for base in ["workspace", "data/img_gen"] {
         let dir = root.join(base);
         let mut pile: Vec<std::path::PathBuf> = vec![dir];
@@ -505,6 +506,13 @@ fn neo_fichiers(root: &std::path::Path) -> Vec<(String, u64, i64)> {
                 let Some(ext) = p.extension().and_then(|x| x.to_str()) else { continue };
                 if !exts.contains(&ext.to_ascii_lowercase().as_str()) {
                     continue;
+                }
+                // Aperçus JPEG côté à côté des masters TIFF/EXR : servis
+                // à l'affichage mais jamais listés comme fichiers Néo.
+                if let Some(nom) = p.file_name().and_then(|n| n.to_str()) {
+                    if nom.to_ascii_lowercase().ends_with("_apercu.jpg") {
+                        continue;
+                    }
                 }
                 let Ok(meta) = std::fs::metadata(&p) else { continue };
                 let taille = meta.len();

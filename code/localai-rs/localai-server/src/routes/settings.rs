@@ -21,7 +21,7 @@ const ALLOWED: &[&str] = &[
     // Produit Néo : langue, premiere installation, nom de l'assistant,
     // centres d'interet (apprentissage par categorie), securite API.
     "language", "onboarded", "assistant_name", "interests",
-    "api_token", "listen_lan",
+    "api_token", "listen_lan", "image_format",
 ];
 
 async fn get_all(State(st): State<Arc<crate::AppState>>) -> ApiResult<Json<Value>> {

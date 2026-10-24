@@ -54,6 +54,8 @@ export default function DocumentsView({ toast }: Props) {
   const [filtre, setFiltre] = useState("");
   const [analysing, setAnalysing] = useState(false);
   const [neoFiles, setNeoFiles] = useState<NeoFile[]>([]);
+  const [selectionNeo, setSelectionNeo] = useState<string[]>([]);
+  const [envoiTelegram, setEnvoiTelegram] = useState(false);
   const [appr, setAppr] = useState<{ running: boolean; category: string; etape: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const fichesPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -144,8 +146,49 @@ export default function DocumentsView({ toast }: Props) {
       getJSON<{ files: NeoFile[] }>("/api/documents/neo-files")
         .then((d) => setNeoFiles(d.files ?? []))
         .catch(() => setNeoFiles([]));
+    } else {
+      setSelectionNeo([]);
     }
   }, [filtre]);
+
+  // TIFF/EXR : affichage et Telegram passent par l'apercu JPEG
+  // (les navigateurs et Telegram ne lisent pas ces formats).
+  const cheminAffiche = useCallback(
+    (p: string) => (/\.(tiff?|exr)$/i.test(p) ? p.replace(/\.(tiff?|exr)$/i, "_apercu.jpg") : p),
+    []
+  );
+
+  // Envoi Telegram multi-photos : lots de 10 par requete.
+  const envoyerSelectionTelegram = useCallback(async () => {
+    if (selectionNeo.length === 0 || envoiTelegram) return;
+    setEnvoiTelegram(true);
+    try {
+      const images = selectionNeo.map(cheminAffiche);
+      let envoyees = 0;
+      for (let i = 0; i < images.length; i += 10) {
+        const lot = images.slice(i, i + 10);
+        const r = await sendJSON<{ ok: boolean; images?: number; error?: string }>(
+          "/api/telegram/send",
+          "POST",
+          {
+            text:
+              images.length > 10
+                ? `Photos Neo (${i + 1}-${i + lot.length} sur ${images.length})`
+                : `Photos Neo (${lot.length})`,
+            images: lot,
+          }
+        );
+        if (!r.ok) throw new Error(r.error ?? "echec envoi");
+        envoyees += r.images ?? lot.length;
+      }
+      toast(`${envoyees} photo(s) envoyee(s) sur Telegram`, "success");
+      setSelectionNeo([]);
+    } catch (err) {
+      toast(`Telegram : ${err}`, "error");
+    } finally {
+      setEnvoiTelegram(false);
+    }
+  }, [selectionNeo, envoiTelegram, cheminAffiche, toast]);
 
   const analyser = useCallback(async () => {
     setAnalysing(true);
@@ -363,6 +406,25 @@ export default function DocumentsView({ toast }: Props) {
               )}
             </div>
             {filtre === "neo" && (
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+                <button
+                  className="primary"
+                  disabled={selectionNeo.length === 0 || envoiTelegram}
+                  onClick={() => void envoyerSelectionTelegram()}
+                >
+                  {envoiTelegram
+                    ? "Envoi en cours..."
+                    : `Envoyer ${selectionNeo.length} photo(s) sur Telegram`}
+                </button>
+                {selectionNeo.length > 0 && (
+                  <button onClick={() => setSelectionNeo([])}>Tout désélectionner</button>
+                )}
+                <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                  Cochez les photos à envoyer (lots de 10).
+                </span>
+              </div>
+            )}
+            {filtre === "neo" && (
               <div className="neo-file-grid">
                 {neoFiles.length === 0 && (
                   <div style={{ color: "var(--text-faint)", fontSize: 12.5 }}>
@@ -370,27 +432,45 @@ export default function DocumentsView({ toast }: Props) {
                     le chat, elle apparaitra ici.
                   </div>
                 )}
-                {neoFiles.map((nf) => (
-                  <div key={nf.path} className="neo-file-card">
-                    <img
-                      src={`/api/sd/file?path=${encodeURIComponent(nf.path)}`}
-                      alt={nf.name}
-                      onClick={() =>
-                        window.dispatchEvent(
-                          new CustomEvent("open-fullscreen", {
-                            detail: {
-                              src: `/api/sd/file?path=${encodeURIComponent(nf.path)}`,
-                              alt: nf.name,
-                            },
-                          })
-                        )
-                      }
-                    />
-                    <div className="neo-file-meta" title={nf.path}>
-                      {nf.name} &mdash; {(nf.size_bytes / 1048576).toFixed(1)} Mo
+                {neoFiles.map((nf) => {
+                  const affichee = cheminAffiche(nf.path);
+                  const choisi = selectionNeo.includes(nf.path);
+                  return (
+                    <div
+                      key={nf.path}
+                      className={`neo-file-card ${choisi ? "selected" : ""}`}
+                    >
+                      <button
+                        className={`neo-check ${choisi ? "checked" : ""}`}
+                        title={choisi ? "Retirer de la sélection" : "Sélectionner"}
+                        onClick={() =>
+                          setSelectionNeo((s) =>
+                            choisi ? s.filter((x) => x !== nf.path) : [...s, nf.path]
+                          )
+                        }
+                      >
+                        {choisi ? "✓" : ""}
+                      </button>
+                      <img
+                        src={`/api/sd/file?path=${encodeURIComponent(affichee)}`}
+                        alt={nf.name}
+                        onClick={() =>
+                          window.dispatchEvent(
+                            new CustomEvent("open-fullscreen", {
+                              detail: {
+                                src: `/api/sd/file?path=${encodeURIComponent(affichee)}`,
+                                alt: nf.name,
+                              },
+                            })
+                          )
+                        }
+                      />
+                      <div className="neo-file-meta" title={nf.path}>
+                        {nf.name} &mdash; {(nf.size_bytes / 1048576).toFixed(1)} Mo
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             {filtre !== "neo" && docsFiltres.length === 0 && (

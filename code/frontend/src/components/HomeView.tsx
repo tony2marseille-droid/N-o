@@ -144,7 +144,7 @@ export default function HomeView({ onView, onNewChat, systemInfo, models, lang }
   const [feedback, setFeedback] = useState<FeedbackResp | null>(null);
   const [vocal, setVocal] = useState<VoiceStatus | null>(null);
   const [agents, setAgents] = useState<AgentDef[]>([]);
-  const [imageFormat, setImageFormat] = useState("png");
+  const [imageFormat, setImageFormat] = useState("tiff");
 
   useEffect(() => {
     getJSON<ReglesResp>("/api/selfimprove/rules").then(setRegles).catch(() => undefined);
@@ -152,7 +152,7 @@ export default function HomeView({ onView, onNewChat, systemInfo, models, lang }
     getJSON<VoiceStatus>("/api/voice/status").then(setVocal).catch(() => undefined);
     getJSON<{ agents: AgentDef[] }>("/api/agents").then((a) => setAgents(a.agents)).catch(() => undefined);
     getJSON<{ settings: Record<string, string> }>("/api/settings")
-      .then((d) => setImageFormat(d.settings?.image_format ?? "png"))
+      .then((d) => setImageFormat(d.settings?.image_format ?? "tiff"))
       .catch(() => undefined);
   }, []);
 
@@ -372,9 +372,11 @@ export default function HomeView({ onView, onNewChat, systemInfo, models, lang }
                   }}
                   style={{ width: "100%", padding: "8px 10px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text)" }}
                 >
-                  <option value="png">PNG (sans perte, défaut)</option>
-                  <option value="jpeg">JPEG (compressé, plus léger)</option>
+                  <option value="tiff">TIFF (master sans perte — défaut)</option>
+                  <option value="jpeg">JPEG (4K)</option>
+                  <option value="png">PNG (sans perte)</option>
                   <option value="webp">WebP (moderne, bon compromis)</option>
+                  <option value="exr">EXR (HDR, post-traitement)</option>
                 </select>
               </div>
             </div>

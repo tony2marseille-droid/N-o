@@ -2199,3 +2199,35 @@ html[data-theme="light"] .conv-item.selected {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+
+/* ---------- Selection multiple dossier Neo (envoi Telegram) ---------- */
+.neo-file-card {
+  position: relative;
+}
+
+.neo-file-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.neo-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  background: rgba(2, 6, 3, 0.75);
+  color: transparent;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.neo-check.checked {
+  background: var(--accent);
+  color: #02150a;
+  font-weight: 700;
+}

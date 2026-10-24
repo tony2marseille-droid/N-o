@@ -51,14 +51,23 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// Masters TIFF/EXR : les navigateurs ne les affichent pas -> on sert
+// l'apercu JPEG cote a cote (genere automatiquement par l'outil).
+function srcImage(p: string): string {
+  return /\.(tiff?|exr)$/i.test(p)
+    ? p.replace(/\.(tiff?|exr)$/i, "_apercu.jpg")
+    : p;
+}
+
 function renderContent(text: string) {
   const safe = escapeHtml(text);
   const withLinks = safe.replace(
     /\[([^\]]{1,120})\]\((file:\/\/[^\s)]+|https?:\/\/[^\s)]+)\)/g,
     (_m, label: string, url: string) => {
-      if (/\.(png|jpe?g|webp)(\?.*)?$/i.test(url)) {
+      if (/\.(png|jpe?g|webp|tiff?|exr)(\?.*)?$/i.test(url)) {
         const chemin = decodeURIComponent(url.replace(/^file:\/\/\/?/i, ""));
-        return `<img class="msg-image" alt="${label}" src="/api/sd/file?path=${encodeURIComponent(chemin)}" onclick="window.dispatchEvent(new CustomEvent('open-fullscreen', {detail:{src:'/api/sd/file?path=${encodeURIComponent(chemin)}',alt:'${label}'}}))" />`;
+        const affichee = srcImage(chemin);
+        return `<img class="msg-image" alt="${label}" src="/api/sd/file?path=${encodeURIComponent(affichee)}" onclick="window.dispatchEvent(new CustomEvent('open-fullscreen', {detail:{src:'/api/sd/file?path=${encodeURIComponent(affichee)}',alt:'${label}'}}))" />`;
       }
       return `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`;
     }
@@ -71,9 +80,11 @@ function renderContent(text: string) {
     // renvoyes par les outils : la route /api/sd/file resout contre la
     // racine et refuse toute traversée de chemin.
     .replace(
-      /\b((?:[A-Za-z]:\\|data[/\\]|workspace[/\\])[^\s<>"'`*]+?\.(?:png|jpe?g|webp))\b/gi,
-      (_m, p: string) =>
-        `<img class="msg-image" alt="image" src="/api/sd/file?path=${encodeURIComponent(p)}" onclick="window.dispatchEvent(new CustomEvent('open-fullscreen', {detail:{src:'/api/sd/file?path=${encodeURIComponent(p)}',alt:'image'}}))" />`
+      /\b((?:[A-Za-z]:\\|data[/\\]|workspace[/\\])[^\s<>"'`*]+?\.(?:png|jpe?g|webp|tiff?|exr))\b/gi,
+      (_m, p: string) => {
+        const affichee = srcImage(p);
+        return `<img class="msg-image" alt="image" src="/api/sd/file?path=${encodeURIComponent(affichee)}" onclick="window.dispatchEvent(new CustomEvent('open-fullscreen', {detail:{src:'/api/sd/file?path=${encodeURIComponent(affichee)}',alt:'image'}}))" />`;
+      }
     );
   const parts = styled.split(/(<a [^>]*>.*?<\/a>)/g);
   return parts.map((part, i) => {
@@ -231,19 +242,21 @@ export default function ChatView({
     const mdRe = /\[([^\]]{1,120})\]\((file:\/\/[^\s)]+)\)/g;
     let m: RegExpExecArray | null;
     while ((m = mdRe.exec(content)) !== null) {
-      if (/\.(png|jpe?g|webp)(\?.*)?$/i.test(m[2])) {
-        const p = decodeURIComponent(m[2].replace(/^file:\/\//i, "").replace(/^\//, ""));
+      if (/\.(png|jpe?g|webp|tiff?|exr)(\?.*)?$/i.test(m[2])) {
+        const brut = decodeURIComponent(m[2].replace(/^file:\/\//i, "").replace(/^\//, ""));
+        const p = srcImage(brut);
         if (!images.some((x) => x.toLowerCase() === p.toLowerCase())) images.push(p);
       }
     }
-    const bareRe = /\b((?:[A-Za-z]:\\|data[\/\\]|workspace[\/\\])[^\s<>"'`*]+?\.(?:png|jpe?g|webp))\b/gi;
+    const bareRe = /\b((?:[A-Za-z]:\\|data[\/\\]|workspace[\/\\])[^\s<>"'`*]+?\.(?:png|jpe?g|webp|tiff?|exr))\b/gi;
     while ((m = bareRe.exec(content)) !== null) {
-      if (!images.some((x) => x.toLowerCase() === m![1].toLowerCase())) images.push(m[1]);
+      const p = srcImage(m![1]);
+      if (!images.some((x) => x.toLowerCase() === p.toLowerCase())) images.push(p);
     }
     // Texte nettoye : sans balises d'images ni chemins bruts.
     let text = content
       .replace(/\[([^\]]{1,120})\]\(file:\/\/[^\s)]+\)/g, "$1")
-      .replace(/\b((?:[A-Za-z]:\\|data[\/\\]|workspace[\/\\])[^\s<>"'`*]+?\.(?:png|jpe?g|webp))\b/gi, "")
+      .replace(/\b((?:[A-Za-z]:\\|data[\/\\]|workspace[\/\\])[^\s<>"'`*]+?\.(?:png|jpe?g|webp|tiff?|exr))\b/gi, "")
       .trim();
     try {
       const resp = await fetch("/api/telegram/send", {

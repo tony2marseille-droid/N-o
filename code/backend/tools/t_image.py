@@ -70,10 +70,78 @@ def tool_edit_image(image_path: str, prompt: str, save_path: str = "") -> str:
     return generer(prompt, save_path, reference=str(p), mode="edit")
 
 
+def _vers_maitre(src: Path, dst: Path) -> bool:
+    """Convertit le PNG genere en master TIFF (PIL) ou EXR (OpenCV)."""
+    try:
+        if dst.suffix.lower() in (".tiff", ".tif"):
+            from PIL import Image
+
+            im = Image.open(src)
+            im.save(dst, format="TIFF", compression="tiff_deflate")
+            return dst.is_file()
+        # EXR : OpenCV d'abord (si la wheel embarque OpenEXR), puis
+        # imageio + FreeImage (telechargement unique au premier appel).
+        import os as _os
+
+        _os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
+        try:
+            import cv2  # type: ignore
+            import numpy as _np
+
+            bgr = cv2.imdecode(
+                _np.fromfile(str(src), dtype=_np.uint8), cv2.IMREAD_COLOR)
+            if bgr is not None:
+                ok, buf = cv2.imencode(".exr", bgr.astype(_np.float32))
+                if ok:
+                    buf.tofile(str(dst))
+                    return dst.is_file()
+        except Exception:
+            pass
+        try:
+            import imageio.v2 as _imageio
+            import numpy as _np2
+
+            from PIL import Image as _Image
+
+            im = _Image.open(src)
+            arr = _np2.asarray(im, dtype=_np2.float32)
+            _imageio.imwrite(str(dst), arr)
+            return dst.is_file()
+        except Exception:
+            return False
+    except Exception:
+        return False
+
+
+def _apercu_jpg(src: Path, dst: Path) -> None:
+    """Apercu JPEG du master (affichage navigateur + Telegram)."""
+    try:
+        from PIL import Image
+
+        im = Image.open(src).convert("RGB")
+        im.save(dst, format="JPEG", quality=90, optimize=True)
+    except Exception:
+        pass
+
+
+def _finaliser_maitre(src: str, ext: str) -> str | None:
+    """PNG -> master TIFF/EXR + apercu JPEG ; retourne le chemin master."""
+    p = Path(src)
+    cible = p.with_suffix(ext)
+    if not _vers_maitre(p, cible):
+        return None
+    _apercu_jpg(p, cible.with_name(f"{cible.stem}_apercu.jpg"))
+    try:
+        p.unlink()
+    except Exception:
+        pass
+    return str(cible)
+
+
 def tool_generate_image(
     prompt: str, save_path: str = "", largeur: int = 0, hauteur: int = 0,
     negatif: str = "", steps: int = 0, reference: str = "",
-    reference_desc: str = "", variantes: int = 1,
+    reference_desc: str = "", variantes: int = 1, format: str = "",
 ) -> str:
     """Generation d'image locale via stable-diffusion.cpp.
 
@@ -84,15 +152,58 @@ def tool_generate_image(
     fidelite du rendu Kontext).
     variantes : nombre d'images a produire (1 a 3) ; chacune est notee par le
     modele vision (note /10 + fidelite) et la meilleure est indiquee en tete.
+    format : "tiff" (defaut — master sans perte), "exr" (HDR), "jpeg"/"jpg",
+    "png" ou "webp" — definit l'extension et le format de sortie. TIFF/EXR
+    produisent aussi un apercu JPEG "_apercu.jpg" cote a cote (affichage
+    navigateur + Telegram). Vide => reglage image_format (defaut tiff).
     """
     from backend.core.sdgen import generer
+
+    # Consigne : TIFF par defaut. Le reglage image_format (accueil) prime
+    # quand l'agent ne passe pas de format explicite.
+    if not format:
+        try:
+            from backend.core.database import get_db
+
+            row = get_db().query_one(
+                "SELECT value FROM app_settings WHERE key=?",
+                ("image_format",))
+            format = (row["value"] if row else "").strip()
+        except Exception:
+            format = ""
+        if not format:
+            format = "tiff"
+    fmt = (format or "tiff").lower()
+    if fmt in ("jpg", "jpeg"):
+        ext = ".jpg"
+    elif fmt == "webp":
+        ext = ".webp"
+    elif fmt == "exr":
+        ext = ".exr"
+    elif fmt in ("tif", "tiff"):
+        ext = ".tiff"
+    else:
+        fmt = "png"
+        ext = ".png"
+    # Masters TIFF/EXR : generation intermediaire en PNG (PIL ne sait pas
+    # ecrire l'EXR), conversion + apercu JPEG juste apres la generation.
+    maitre = ext in (".tiff", ".exr")
+    ext_gen = ".png" if maitre else ext
 
     if not save_path:
         import time as _t
 
-        save_path = str(Path("data") / f"img_gen_{int(_t.time())}.png")
-    if not re.search(r"\.(png|jpe?g|webp)$", save_path.lower()):
-        save_path += ".png"
+        save_path = str(Path("data") / f"img_gen_{int(_t.time())}{ext_gen}")
+    if not re.search(r"\.(png|jpe?g|webp|tiff?|exr)$", save_path.lower()):
+        # Force l'extension demandee si l'utilisateur en a mis une autre
+        save_path = re.sub(r"\.(png|jpe?g|webp|tiff?|exr)$", ext_gen, save_path, flags=re.I)
+        if not save_path.lower().endswith(ext_gen):
+            save_path += ext_gen
+    elif maitre and not save_path.lower().endswith(".png"):
+        save_path = re.sub(r"\.(png|jpe?g|webp|tiff?|exr)$", ".png", save_path, flags=re.I)
+        if not save_path.lower().endswith(".png"):
+            save_path += ".png"
+
     variantes = max(1, min(3, int(variantes or 1)))
 
     racine = Path(save_path)
@@ -108,8 +219,13 @@ def tool_generate_image(
                       reference_desc=reference_desc)
         m = re.match(r"Image generee: (.+?) \(\d+ Ko\)", msg)
         if m and Path(m.group(1)).is_file():
-            sorties.append((m.group(1), msg))
+            final = _finaliser_maitre(m.group(1), ext) if maitre else m.group(1)
+            if final:
+                sorties.append((final, msg))
     if not sorties:
+        if maitre:
+            return ("Erreur: conversion TIFF/EXR impossible (PIL/OpenCV). "
+                    "Reessayez avec format png, jpeg ou webp.")
         return ("Erreur: aucune image generee. Verifiez le generateur "
                 "d'images (Reglages > Generation d'images).")
 
@@ -134,8 +250,10 @@ def tool_generate_image(
                        graine=random.randint(1, 2**31 - 1))
         m2 = re.match(r"Image generee: (.+?) \(\d+ Ko\)", msg2)
         if m2 and Path(m2.group(1)).is_file():
-            sorties.append((m2.group(1), msg2))
-            notes[m2.group(1)] = _evaluer(m2.group(1))
+            final2 = _finaliser_maitre(m2.group(1), ext) if maitre else m2.group(1)
+            if final2:
+                sorties.append((final2, msg2))
+                notes[final2] = _evaluer(final2)
 
     # 4. Meilleure : fidele d'abord, puis note.
     def _cle(chemin: str) -> tuple[int, int]:
